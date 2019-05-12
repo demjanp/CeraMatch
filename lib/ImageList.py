@@ -12,7 +12,7 @@ class ImageDelegate(QtWidgets.QStyledItemDelegate):
 	
 	def paint(self, painter, option, index):
 		
-		index2 = index.data(QtCore.Qt.UserRole)[4]
+		index2 = index.data(QtCore.Qt.UserRole).index
 		
 		self.parent.list_model.on_paint(index2)
 		
@@ -24,7 +24,7 @@ class IconThread(QtCore.QThread):
 		
 		self.parent = parent
 		self.index = index
-		self.label = index.data(QtCore.Qt.UserRole)[1]
+		self.label = index.data(QtCore.Qt.UserRole).resource
 		self.icon_size = icon_size
 		self.local_folder = self.parent.model.local_folder
 		
@@ -58,7 +58,7 @@ class ListModel(QtCore.QAbstractListModel):
 		self.font = QtGui.QFont()
 		self.font.setPointSize(12)
 		
-		self.icons = [None] * len(self.model.sample_data)
+		self.icons = [None] * len(self.model.samples)
 	
 	def stop_threads(self):
 		
@@ -69,7 +69,7 @@ class ListModel(QtCore.QAbstractListModel):
 	
 	def rowCount(self, parent):
 		
-		return len(self.model.sample_data)
+		return len(self.model.samples)
 	
 	def flags(self, index):
 		
@@ -77,16 +77,14 @@ class ListModel(QtCore.QAbstractListModel):
 		
 	def data(self, index, role):
 		
-		# self.model.sample_data = [[sample_id, DResource, label, value], ...]
-		
 		if role == QtCore.Qt.DisplayRole:
-			label = self.model.sample_data[index.row()][2]
+			label = self.model.samples[index.row()].label
 			if isinstance(label, QtGui.QColor):
 				return None
 			return label
 		
 		if role == QtCore.Qt.BackgroundRole:
-			label = self.model.sample_data[index.row()][2]
+			label = self.model.samples[index.row()].label
 			if isinstance(label, QtGui.QColor):
 				return label
 			return QtGui.QColor(QtCore.Qt.white)
@@ -98,8 +96,10 @@ class ListModel(QtCore.QAbstractListModel):
 			return icon
 		
 		if role == QtCore.Qt.UserRole:
-			return self.model.sample_data[index.row()] + [index]  # [sample_id, DResource, label, value, index]
-		
+			item = self.model.samples[index.row()]
+			item.index = index
+			return item
+			
 		return None
 		
 	def on_icon_thread(self, index, path):
@@ -165,15 +165,15 @@ class ImageList(QtWidgets.QListView):
 		self.setIconSize(QtCore.QSize(value, value))
 	
 	def get_selected(self):
-		# returns [[sample_id, DResource, label, value, index], ...]
+		# returns [Sample, ...]
 		
 		return [index.data(QtCore.Qt.UserRole) for index in self.selectionModel().selectedIndexes()]
 	
 	def on_activated(self, index):
 		
-		sample_id, DResource, label, value, index = index.data(QtCore.Qt.UserRole)
+		sample = index.data(QtCore.Qt.UserRole)
 		
-		text = "Sample ID\t%s\nLabel\t%s\nValue\t%s" % (sample_id, label, value)
+		text = "Sample ID\t%s\nValue\t%s" % (sample.id, sample.value)
 		
 		data = QtCore.QMimeData()
 		data.setData("text/plain", bytes(text, "utf-8"))

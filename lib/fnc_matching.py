@@ -174,9 +174,11 @@ def axis_dist(prof1, params1, prof2, params2):
 	dsq = min(1, (((y1 - y2)**2 + (x1 - x2)**2)**0.5) / (2*(min(sumsq_1_max, sumsq_2_max)**0.5)))
 	return ((dax**2 + dsq**2)**0.5) / (2**0.5)
 
-def arc_length(profile):
+def arc_length(profile, pad0 = False):
 	
 	ds = np.sqrt((np.diff(profile, axis = 0) ** 2).sum(axis = 1))
+	if pad0:
+		ds = np.hstack(([0], ds))
 	s = np.cumsum(ds)
 	s -= s[np.argmin(cdist([get_rim(profile)], profile)[0])]
 	return s
@@ -416,13 +418,11 @@ def get_dendrogram(z):
 	
 	return links, xticks, ddata["leaves"]
 
-def get_clusters(distance, iters = 1000):
+def get_clusters(distance, iters = 1000, select_ratio = 10):
 	
 	pca = PCA(n_components = None)
 	pca.fit(distance)
-	scree = pca.explained_variance_ratio_
-	s = np.cumsum(scree)
-	pca = PCA(n_components = int(((s <= 0.9) | (scree > 0.5)).sum()))
+	pca = PCA(n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min())
 	pca.fit(distance)
 	pca_scores = pca.transform(distance)
 	z = linkage(pca_scores, method = "ward")
@@ -434,7 +434,8 @@ def get_clusters(distance, iters = 1000):
 		clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
 		stats = np.zeros(clusters.shape[0])
 		for r in range(iters):
-			mask = np.random.randint(0, 2, clusters.shape[0]).astype(bool)
+			mask = np.random.randint(0, select_ratio, clusters.shape[0])
+			mask = (mask == 0)
 			lda.fit(pca_scores[mask], clusters[mask])
 			pred = lda.predict(pca_scores[~mask])
 			stats[~mask] += (pred == clusters[~mask]).astype(int)
@@ -490,9 +491,7 @@ def get_clusters_wss(distance):
 	
 	pca = PCA(n_components = None)
 	pca.fit(distance)
-	scree = pca.explained_variance_ratio_
-	s = np.cumsum(scree)
-	pca = PCA(n_components = int(((s <= 0.9) | (scree > 0.5)).sum()))
+	pca = PCA(n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min())
 	pca.fit(distance)
 	pca_scores = pca.transform(distance)
 	z = linkage(pca_scores, method = "ward")
@@ -552,16 +551,13 @@ def get_clusters_wss(distance):
 	
 	return collect, wss_opt
 
-def get_max_clusters(distance):
+def get_n_clusters(distance, n_clusters):
 	
 	pca = PCA(n_components = None)
 	pca.fit(distance)
-	scree = pca.explained_variance_ratio_
-	s = np.cumsum(scree)
-	pca = PCA(n_components = int(((s <= 0.9) | (scree > 0.5)).sum()))
+	pca = PCA(n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min())
 	pca.fit(distance)
 	pca_scores = pca.transform(distance)
-	
 	z = linkage(pca_scores, method = "ward")
 	
 	# get cluster names
@@ -589,17 +585,34 @@ def get_max_clusters(distance):
 			names[k] = "0"
 	
 	ks = sorted(names.keys(), key = lambda k: len(k_leaves[k]))
+	k_leaves = dict([(k, k_leaves[k]) for k in ks])
 	
-	clusters = np.array(fcluster(z, distance.shape[0] // 2, "maxclust"), dtype = int)
+	# assign names to clusters
+	clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
 	clu_labels = np.unique(clusters)
-	collect = defaultdict(list)
+	collect = {}
 	for clu in clu_labels:
 		cluster = np.where(clusters == clu)[0]
 		if cluster.size:
-			for k in ks:
-				if np.in1d(cluster, k_leaves[k]).all():
+			k_found = None
+			for k in k_leaves:
+				if (len(k_leaves[k]) == len(cluster)) and np.in1d(cluster, k_leaves[k]).all():
+					k_found = k
 					break
-			collect[names[k]] += cluster.tolist()
-	collect = dict([(name, collect[name]) for name in natsorted(collect.keys())])
+			if (k_found is None) or (names[k_found] in collect):
+				for k in ks:
+					if np.in1d(cluster, k_leaves[k]).all():
+						break
+				name = names[k]
+				n = 1
+				while ("%s.%d" % (name, n)) in collect:
+					n += 1
+				name = "%s.%d" % (name, n)
+			else:
+				name = names[k_found]
+			collect[name] = cluster.tolist()
+	clu_names = sorted(collect.keys())
+	collect = dict([(name, collect[name]) for name in clu_names])
+	
 	return collect
 

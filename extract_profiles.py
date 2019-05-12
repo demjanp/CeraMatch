@@ -1,5 +1,5 @@
 from deposit import Store
-from fnc_matching import *
+from lib.fnc_matching import *
 
 from scipy.spatial.distance import cdist
 from PIL import Image, ImageDraw

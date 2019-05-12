@@ -1,4 +1,4 @@
-from fnc_matching import *
+from lib.fnc_matching import *
 import json
 import os
 import numpy as np

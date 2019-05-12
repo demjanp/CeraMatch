@@ -1,6 +1,6 @@
 from deposit import Store
 
-from fnc_matching import *
+from lib.fnc_matching import *
 import json
 import numpy as np
 
