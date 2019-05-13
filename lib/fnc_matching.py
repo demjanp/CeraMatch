@@ -6,9 +6,9 @@ from PIL import Image, ImageDraw
 from itertools import combinations
 from collections import defaultdict
 from sklearn.decomposition import PCA
-from scipy.spatial.distance import cdist
+from scipy.spatial.distance import cdist, pdist
 from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster, cophenet
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 def reduce_profile(profile, d_min):
@@ -362,257 +362,73 @@ def combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_ax):
 	
 	return combined
 
-def combine_dists_rms(distance, w_R, w_th, w_kap, w_h, w_diam, w_ax):
-	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist]; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist = components of morphometric distance
+def get_distmax_ordering(distance):
+	# orders samples so that the the next one has the highest possible distance to the most similar of the previous samples
+	# (ensures that the samples at the beginning of the sequence are the most diverse)
+	# returns {sample_idx: order, ...}
 	
-	combined = np.ones(distance.shape[:2])
+	D = squareform(pdist(distance))
 	
-	w_sum = sum([w_R, w_th, w_kap, w_h, w_diam, w_ax])
-	w_R, w_th, w_kap, w_h, w_diam, w_ax = [w / w_sum for w in [w_R, w_th, w_kap, w_h, w_diam, w_ax]]
-	
-	dists = [None] * 6
-	for idx in range(6):
-		dists[idx] = distance[:,:,idx]
-	R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist = dists
-	
-	ax_dist[ax_dist == -1] = ax_dist[ax_dist > -1].mean()
-	
-	combined = np.sqrt((R_dist**2) * w_R + (th_dist**2) * w_th + (kap_dist**2) * w_kap + (h_dist**2) * w_h + (diam_dist**2) * w_diam + (ax_dist**2) * w_ax)
-	
-	for i in range(combined.shape[0]):
-		combined[i,i] = 0
-	
-	return combined
+	# start with the profile most disstant from the centroid of the assemblage
+	idx0 = np.argmax(((distance - distance.mean(axis = 0))**2).sum(axis = 1))
+	idxs_done = [idx0]
+	data = {} # {sample_idx: order, ...}
+	i = 0
+	data[idx0] = i
+	idxs_todo = [idx for idx in range(D.shape[0]) if idx != idx0]
+	while idxs_todo:
+		i += 1
+		idx1 = idxs_todo[np.argmax((D[:,idxs_todo][idxs_done]).min(axis = 0))]
+		d = D[idxs_done,idx1].min()
+		data[idx1] = i
+		idxs_done.append(idx1)
+		idxs_todo.remove(idx1)
+	return data
 
-def get_dendrogram(z):
-	# return [links, xticks, xlabels]
-	# links: [[k, x, y, link, leaves], ...]; link = [[x,y], ...]; leaves = list of leaves connected by link
-
-	def getLeaves(z, k):
-		leaves = []
-		n = z.shape[0] + 1
-		left, right = z[k,:2]
-		if left < n:
-			leaves.append(int(left))
+def get_sample_labels(distance):
+	# returns {sample_idx: label, ...}
+	
+	samples_n = distance.shape[0]
+	z = linkage(distance, method = "ward") # [[idx1, idx2, dist, sample_count], ...]
+	dist_max = z[:,3].max()
+	sample_idxs = {} # {z_idx: [sample_idx, ...], ...}
+	dist_lookup = {} # {z_idx: dist, ...}
+	z_idx = samples_n
+	for idx1, idx2, dist in z[:,:3]:
+		if idx1 < samples_n:
+			idxs1 = [int(idx1)]
 		else:
-			leaves += getLeaves(z, int(left - n))
-		if right < n:
-			leaves.append(int(right))
+			idxs1 = sample_idxs[idx1]
+		if idx2 < samples_n:
+			idxs2 = [int(idx2)]
 		else:
-			leaves += getLeaves(z, int(right - n))
-		return leaves
+			idxs2 = sample_idxs[idx2]
+		sample_idxs[z_idx] = idxs1 + idxs2
+		dist_lookup[z_idx] = dist_max - dist
+		z_idx += 1
+	z_idx_max = max(sample_idxs.keys())
+	sample_idxs = dict([(z_idx_max - z_idx, sample_idxs[z_idx]) for z_idx in sample_idxs])
+	sample_idxs = dict([(z_idx, sample_idxs[z_idx]) for z_idx in sorted(sample_idxs.keys())])
 	
-	n = z.shape[0] + 1
-	ddata = dendrogram(z, link_color_func = lambda k: "#000000"[:-len(str(k))] + str(k), no_plot = True)
-	links = [[int(ddata["color_list"][k][1:]) - n, 0.5 * sum(ddata['icoord'][k][1:3]), ddata['dcoord'][k][1], np.vstack((ddata['icoord'][k], ddata['dcoord'][k])).T, []] for k in range(len(ddata['icoord']))]
-	xticks = np.zeros(n)
-	for k, x, y, link, leaves in links:
-		left, right = z[k,:2]
-		if left < n:
-			xticks[ddata["leaves"].index(int(left))] = link[0,0]
-		if right < n:
-			xticks[ddata["leaves"].index(int(right))] = link[3,0]
+	idx_max = max(sample_idxs.keys())
+	for idx in range(samples_n):
+		sample_idxs[idx_max + idx + 1] = [idx]
+	
+	sample_labels = defaultdict(str) # {sample_idx: label, ...}
+	for z_idx in sorted(sample_idxs.keys()):
+		for idx in sample_idxs[z_idx]:
+			sample_labels[idx] += ".%d" % (int(z_idx) + 1)
+	for idx in sample_labels:
+		sample_labels[idx] = sample_labels[idx][1:]
+	
+	return sample_labels
 
-	for k, x, y, link, leaves in links:
-		leaves += getLeaves(z, k)
+def get_2_clusters(distance):
 	
-	return links, xticks, ddata["leaves"]
-
-def get_clusters(distance, iters = 1000, select_ratio = 10):
+	z = linkage(distance, method = "ward") # [[idx1, idx2, dist, sample_count], ...]
+	clusters = np.array(fcluster(z, 2, "maxclust"), dtype = int)
+	clust1 = np.where(clusters == 1)[0]
+	clust2 = np.where(clusters == 2)[0]
 	
-	pca = PCA(n_components = None)
-	pca.fit(distance)
-	pca = PCA(n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min())
-	pca.fit(distance)
-	pca_scores = pca.transform(distance)
-	z = linkage(pca_scores, method = "ward")
+	return clust1, clust2
 	
-	# find optimal number of clusters based on within-cluster sum of squares
-	lda = LinearDiscriminantAnalysis()
-	fitness = []
-	for n_clusters in range(2, distance.shape[0] // 2):
-		clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
-		stats = np.zeros(clusters.shape[0])
-		for r in range(iters):
-			mask = np.random.randint(0, select_ratio, clusters.shape[0])
-			mask = (mask == 0)
-			lda.fit(pca_scores[mask], clusters[mask])
-			pred = lda.predict(pca_scores[~mask])
-			stats[~mask] += (pred == clusters[~mask]).astype(int)
-		n_clusters = clusters.max()
-		fitness.append([clusters.max(), ((n_clusters*stats)/(n_clusters*stats + iters)).mean()])
-	fitness = np.array(fitness)
-	fitness = fitness[np.argsort(fitness[:,0])]
-	idx = np.argmax(fitness[:,1])
-	n_clusters = int(fitness[idx,0])
-	fitness_opt = fitness[idx,1]
-	
-	# get cluster names
-	names = {} # {k: name, ...}
-	links, _, _ = get_dendrogram(z)
-	parent = {} #  {k_child: k_parent, ...}
-	n = z.shape[0] + 1
-	k_leaves = {} # {k: leaves, ...}
-	ks = []
-	for k, _, _, _, leaves in links:
-		k_leaves[k] = leaves.copy()
-		left, right = z[k,:2].astype(int) - n
-		parent[left] = k
-		parent[right] = k
-		ks.append(k)
-	ks = sorted(ks)[::-1]
-	for k in ks:
-		name = str(ks[0] - k)
-		if k in parent:
-			if names[parent[k]] != "0":
-				names[k] = "%s.%s" % (names[parent[k]], name)
-			else:
-				names[k] = name
-		else:
-			names[k] = "0"
-	
-	# assign names to clusters
-	clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
-	clu_labels = np.unique(clusters)
-	collect = {}
-	for clu in clu_labels:
-		cluster = np.where(clusters == clu)[0]
-		if cluster.size:
-			for k in k_leaves:
-				if (len(k_leaves[k]) == len(cluster)) and np.in1d(cluster, k_leaves[k]).all():
-					break
-			collect[names[k]] = cluster.tolist()
-	clu_names = sorted(collect.keys())
-	collect = dict([(name, collect[name]) for name in clu_names])
-	
-	return collect, fitness_opt
-
-def get_clusters_wss(distance):
-	
-	pca = PCA(n_components = None)
-	pca.fit(distance)
-	pca = PCA(n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min())
-	pca.fit(distance)
-	pca_scores = pca.transform(distance)
-	z = linkage(pca_scores, method = "ward")
-	
-	# find optimal number of clusters based on within-cluster sum of squares
-	wss = []
-	for n_clusters in range(2, distance.shape[0] // 2):
-		clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
-		c_sum = 0
-		for clu in range(1, clusters.max() + 1):
-			mask = (clusters == clu)
-			c_sum += (distance[:,mask][mask]**2).sum()
-		wss.append([clusters.max(), c_sum])
-	wss = np.array(wss)
-	wss = wss[np.argsort(wss[:,0])]
-	idx = np.where(np.gradient(wss[:,1]) > -1)[0].min()
-	n_clusters = int(wss[idx,0])
-	wss_opt = wss[idx,1]
-	
-	# get cluster names
-	names = {} # {k: name, ...}
-	links, _, _ = get_dendrogram(z)
-	parent = {} #  {k_child: k_parent, ...}
-	n = z.shape[0] + 1
-	k_leaves = {} # {k: leaves, ...}
-	ks = []
-	for k, _, _, _, leaves in links:
-		k_leaves[k] = leaves.copy()
-		left, right = z[k,:2].astype(int) - n
-		parent[left] = k
-		parent[right] = k
-		ks.append(k)
-	ks = sorted(ks)[::-1]
-	for k in ks:
-		name = str(ks[0] - k)
-		if k in parent:
-			if names[parent[k]] != "0":
-				names[k] = "%s.%s" % (names[parent[k]], name)
-			else:
-				names[k] = name
-		else:
-			names[k] = "0"
-	
-	# assign names to clusters
-	clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
-	clu_labels = np.unique(clusters)
-	collect = {}
-	for clu in clu_labels:
-		cluster = np.where(clusters == clu)[0]
-		if cluster.size:
-			for k in k_leaves:
-				if (len(k_leaves[k]) == len(cluster)) and np.in1d(cluster, k_leaves[k]).all():
-					break
-			collect[names[k]] = cluster.tolist()
-	clu_names = sorted(collect.keys())
-	collect = dict([(name, collect[name]) for name in clu_names])
-	
-	return collect, wss_opt
-
-def get_n_clusters(distance, n_clusters):
-	
-	pca = PCA(n_components = None)
-	pca.fit(distance)
-	pca = PCA(n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min())
-	pca.fit(distance)
-	pca_scores = pca.transform(distance)
-	z = linkage(pca_scores, method = "ward")
-	
-	# get cluster names
-	names = {} # {k: name, ...}
-	links, _, _ = get_dendrogram(z)
-	parent = {} #  {k_child: k_parent, ...}
-	n = z.shape[0] + 1
-	k_leaves = {} # {k: leaves, ...}
-	ks = []
-	for k, _, _, _, leaves in links:
-		k_leaves[k] = leaves.copy()
-		left, right = z[k,:2].astype(int) - n
-		parent[left] = k
-		parent[right] = k
-		ks.append(k)
-	ks = sorted(ks)[::-1]
-	for k in ks:
-		name = str(ks[0] - k)
-		if k in parent:
-			if names[parent[k]] != "0":
-				names[k] = "%s.%s" % (names[parent[k]], name)
-			else:
-				names[k] = name
-		else:
-			names[k] = "0"
-	
-	ks = sorted(names.keys(), key = lambda k: len(k_leaves[k]))
-	k_leaves = dict([(k, k_leaves[k]) for k in ks])
-	
-	# assign names to clusters
-	clusters = np.array(fcluster(z, n_clusters, "maxclust"), dtype = int)
-	clu_labels = np.unique(clusters)
-	collect = {}
-	for clu in clu_labels:
-		cluster = np.where(clusters == clu)[0]
-		if cluster.size:
-			k_found = None
-			for k in k_leaves:
-				if (len(k_leaves[k]) == len(cluster)) and np.in1d(cluster, k_leaves[k]).all():
-					k_found = k
-					break
-			if (k_found is None) or (names[k_found] in collect):
-				for k in ks:
-					if np.in1d(cluster, k_leaves[k]).all():
-						break
-				name = names[k]
-				n = 1
-				while ("%s.%d" % (name, n)) in collect:
-					n += 1
-				name = "%s.%d" % (name, n)
-			else:
-				name = names[k_found]
-			collect[name] = cluster.tolist()
-	clu_names = sorted(collect.keys())
-	collect = dict([(name, collect[name]) for name in clu_names])
-	
-	return collect
-

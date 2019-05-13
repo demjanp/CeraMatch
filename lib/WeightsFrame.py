@@ -34,11 +34,6 @@ class WeightsFrame(QtWidgets.QFrame):
 			self.group.layout().addWidget(QtWidgets.QLabel(name), row, 0)
 			self.group.layout().addWidget(self.sliders[name], row, 1)
 		
-		self.reload_button = QtWidgets.QPushButton("Reload")
-		self.reload_button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-		self.reload_button.clicked.connect(self.on_reload)
-		self.group.layout().addWidget(self.reload_button)
-		
 		for name in self.model.weights:
 			self.set_slider(name, int(round(self.model.weights[name] * 100)))
 	
@@ -47,22 +42,9 @@ class WeightsFrame(QtWidgets.QFrame):
 		if name in self.sliders:
 			self.sliders[name].set_value(value)
 	
-	def load_weights(self, weights):
-		
-		for name in weights:
-			self.sliders[name].set_value(int(round(weights[name] * 100)))
-			self.model.weights[name] = weights[name]
-	
 	def update(self):
 		
-		self.reload_button.setEnabled("main" in self.model.cluster_weights)
-		
-		selected = self.view.get_selected()
-		if selected:
-			if selected[0].subcluster is not None:
-				name = "%s-%s" % (selected[0].cluster, selected[0].subcluster)
-				if name in self.model.cluster_weights:
-					self.load_weights(self.model.cluster_weights[name])
+		pass
 
 	def on_reload(self):
 		

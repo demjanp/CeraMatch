@@ -127,6 +127,7 @@ class ImageList(QtWidgets.QListView):
 		self.model = view.model
 		self.icon_size = icon_size
 		self.list_model = None
+		self.index_lookup = {} # {sample_id: index, ...}
 		
 		QtWidgets.QListView.__init__(self, view)
 		
@@ -154,11 +155,22 @@ class ImageList(QtWidgets.QListView):
 		self.activated.connect(self.on_activated)
 		
 		self.list_model.icon_loaded.connect(self.on_icon_loaded)
+		
+		self.index_lookup = {}
+		for row in range(self.list_model.rowCount(self)):
+			index = self.list_model.index(row, 0)
+			sample_id = index.data(QtCore.Qt.UserRole).id
+			self.index_lookup[sample_id] = index
 	
 	def reload(self):
 		
 		self.list_model.stop_threads()
 		self.set_up()
+		self.view.update()
+	
+	def update_(self):
+		
+		pass
 	
 	def set_thumbnail_size(self, value):
 		
@@ -168,6 +180,13 @@ class ImageList(QtWidgets.QListView):
 		# returns [Sample, ...]
 		
 		return [index.data(QtCore.Qt.UserRole) for index in self.selectionModel().selectedIndexes()]
+	
+	def set_selected(self, sample_ids):		
+		
+		self.blockSignals(True)
+		for sample_id in sample_ids:
+			self.selectionModel().select(self.index_lookup[sample_id], QtCore.QItemSelectionModel.SelectionFlag.Select)
+		self.blockSignals(False)
 	
 	def on_activated(self, index):
 		
@@ -184,6 +203,7 @@ class ImageList(QtWidgets.QListView):
 	def selectionChanged(self, selected, deselected):
 		
 		super(ImageList, self).selectionChanged(selected, deselected)
+		self.model.on_selected()
 		self.view.update()
 	
 	def on_icon_loaded(self, index):

@@ -10,5 +10,11 @@ class Sample(object):
 		self.row = row
 		self.index = None
 		self.cluster = None
-		self.cluster_color = None
-		self.subcluster = None
+		self.leaf = None
+
+	def has_cluster(self):
+		
+		if self.cluster:
+			return True
+		return False
+

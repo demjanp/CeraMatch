@@ -21,20 +21,17 @@ class Model(Store):
 		self.samples = [] # [Sample, ...]
 		self.sample_ids = []
 		self.distance = None
-		self.max_clusters = None
+		self.distmax_ordering = {} # {row: sample_id, ...}
 		self.weights = {
 			"Radius": 0,
 			"Tangent": 0,
 			"Curvature": 0,
-			"Hamming": 0,
-			"Diameter": 0,
-			"Axis": 0,
+			"Hamming": 0.10,
+			"Diameter": 0.30,
+			"Axis": 0.60,
 		}
-		self.cluster_weights = {}  # {cluster_name: weights, ...}
-		self.subcluster_numbers = {}  # {cluster_name: subcluster number, ...}
-		for name in self.weights:
-			self.weights[name] = 1/len(self.weights)
-		
+#		for name in self.weights:
+#			self.weights[name] = 1/len(self.weights)
 		
 		Store.__init__(self, parent = self.view)
 		
@@ -54,12 +51,11 @@ class Model(Store):
 		
 		self.distance = np.load(FMATCHING) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist]
 		
-		self.max_clusters = len(self.sample_ids) // 2
-	
 	def set_weight(self, name, value):
 		
 		if name not in self.weights:
 			return
+		self.distmax_ordering = {}
 		self.weights[name] = value
 		names2 = [name2 for name2 in self.weights if name2 != name]
 		values = np.array([self.weights[name2] for name2 in names2])
@@ -70,206 +66,200 @@ class Model(Store):
 			self.weights[name2] = float(values[idx])
 			self.view.weights_frame.set_slider(name2, int(round(self.weights[name2] * 100)))
 	
-	def get_clustering(self, sample_ids, clusters_n, color = 3, gradient = False):
-		# color: 1 = green, 2 = blue, 3 = greyscale
-		# gradient: if True, assign color gradient based on difference from cluster of previous sample, else assign alternating blue / green to clusters
-		# returns 
-		#	data = {sample_id: [caption, cluster_name, order], ...}
-		#	names = [cluster_name, ...]
+	def get_distance(self):
 		
-		def hamming_name(name1, name2):
-			
-			name1 = name1.split("-")[-1].split(".")
-			name2 = name2.split("-")[-1].split(".")
-			min_lenght = min(len(name1), len(name2))
-			for i in range(min_lenght):
-				if name1[i] != name2[i]:
-					break
-			return 1 - (2*i) / (len(name1) + len(name2))
-		
-		def get_ordered_clusters(sample_ids, clusters_n):
-			# returns [[sample_id, cluster_name, order], ...]
-			
-			sample_idxs = sorted([self.sample_ids.index(sample_id) for sample_id in sample_ids])
-			D = combine_dists(self.distance[:,sample_idxs][sample_idxs], self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Axis"])
-			clusters = get_n_clusters(D, clusters_n)
-			names = natsorted(clusters.keys())
-			
-			collect = []  # [sample_id, cluster_name, order]
-			order = 0
-			for idx in clusters[names[0]]:
-				collect.append([self.sample_ids[sample_idxs[idx]], names[0], order])
-				order += 1
-			for name in names[1:]:
-				for idx in clusters[name]:
-					collect.append([self.sample_ids[sample_idxs[idx]], name, order])
-					order += 1
-			return collect, names
-		
-		sample_ids = sample_ids.copy()
-		
-		clusters, names = get_ordered_clusters(sample_ids, clusters_n)  # [[sample_id, cluster_name, order], ...]
-		
-		data = {} # {sample_id: [caption, cluster name, order], ...}
-		
-		if gradient:
-			for i in range(len(clusters)):
-				sample_id, name, order = clusters[i]
-				if i == 0:
-					name_left = name
-				else:
-					_, name_left, _ = clusters[i - 1]
-				h = hamming_name(name, name_left)
-				grad = 255 - int(round(h*255))
-				if color == 3:
-					rgb = [grad, grad, grad, 255]
-				else:
-					rgb = [255,255,255,255]
-					for cidx in range(3):
-						if cidx != color:
-							rgb[cidx] = grad
-				data[sample_id] = [QtGui.QColor(*rgb), name, order]
-		
-		else:
-			if color == 3:
-				colors = [QtGui.QColor(200, 200, 200, 255), QtGui.QColor(128, 128, 128, 255)]
-			else:
-				colors = [QtGui.QColor(200, 255, 200, 255), QtGui.QColor(200, 200, 255, 255)]
-			ci = True
-			name_prev = None
-			for i in range(len(clusters)):
-				sample_id, name, order = clusters[i]
-				if name != name_prev:
-					ci = not ci
-					name_prev = name
-				label = colors[int(ci)]
-				data[sample_id] = [label, name, order]
-		
-		return data, names
+		return combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Axis"])
 	
-	def load_clustering(self, clusters_n):
+	def get_pca(self, D = None):
 		
-		data = {} # {sample_id: [caption, cluster_name, order], ...}
-		colors = {}
-		if clusters_n < self.max_clusters:
-			data, names = self.get_clustering(self.sample_ids, clusters_n, color = 1, gradient = False)
-			for i, name in enumerate(names):
-				sample_ids = [sample_id for sample_id in self.sample_ids if data[sample_id][1] == name]
-				subclusters_n = len(sample_ids) // 2
-				order0 = min([data[sample_id][2] for sample_id in sample_ids])
-				if subclusters_n > 1:
-					color = 1 if (i % 2 == 0) else 2
-					subdata, _ = self.get_clustering(sample_ids, subclusters_n, color = color, gradient = True)
-					for sample_id in subdata:
-						colors[sample_id] = color
-						caption, name, order = subdata[sample_id]
-						data[sample_id][0] = caption
-						data[sample_id][1] = "%s-%s" % (data[sample_id][1], name)
-						data[sample_id][2] = order0 + order
-				else:
-					color = [QtGui.QColor(200, 255, 200, 255), QtGui.QColor(200, 200, 255, 255)][i % 2]
-					for sample_id in sample_ids:
-						colors[sample_id] = 1 if (i % 2 == 0) else 2
-						data[sample_id][0] = color
-						data[sample_id][1] = "%s-1" % (data[sample_id][1])
-		else:
-			data, names = self.get_clustering(self.sample_ids, clusters_n, color = 3, gradient = True)
+		if D is None:
+			D = self.get_distance()
+		pca = PCA(n_components = None)
+		pca.fit(D)
+		n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min()
+		pca = PCA(n_components = n_components)
+		pca.fit(D)
+		return pca.transform(D)
 		
-		self.cluster_weights = {}
-		self.subcluster_numbers = {}
-		if clusters_n < self.max_clusters:
-			for sample in self.samples:
-				sample.cluster = data[sample.id][1].split("-")[0]
-				sample.cluster_color = colors[sample.id]
-			self.cluster_weights["main"] = dict([(weight_name, self.weights[weight_name]) for weight_name in self.weights])
+	def load_ids(self):
 		
-		self.update_captions(data)
-	
-	def load_subclustering(self, clusters_n, color = 3, gradient = False, store_subcluster = True):
-		
-		selected = self.view.get_selected()
-		if not selected:
-			return
-		cluster = selected[0].cluster
-		if cluster is None:
-			return
-		samples = dict([(sample.id, sample) for sample in self.samples if sample.cluster == cluster])
-		if clusters_n is None:
-			clusters_n = len(samples) // 2
-		self.subcluster_numbers[cluster] = clusters_n
-		data, _ = self.get_clustering(list(samples.keys()), clusters_n, color = color, gradient = gradient)
-		order0 = min([samples[sample_id].row for sample_id in samples])
-		names = set()
-		for sample_id in data:
-			label, value, order = data[sample_id]
-			samples[sample_id].label = label
-			samples[sample_id].value = "%s-%s" % (cluster, value)
-			samples[sample_id].row = order0 + order
-			if store_subcluster:
-				samples[sample_id].subcluster = value
-				names.add(samples[sample_id].value)
-			else:
-				samples[sample_id].subcluster = None
+		sorted_ids = natsorted(self.sample_ids)
+		for sample in self.samples:
+			sample.row = sorted_ids.index(sample.id)
+			sample.value = sample.id
+			sample.label = sample.id
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
-		if store_subcluster:
-			for name in names:
-				self.cluster_weights[name] = dict([(weight_name, self.weights[weight_name]) for weight_name in self.weights])
 		self.view.image_lst.reload()
-	
-	def clear_subclustering(self):
+		self.view.image_lst.scrollToTop()
 		
-		selected = self.view.get_selected()
-		if not selected:
-			return
-		cluster = selected[0].cluster
-		if cluster is None:
-			return
-		color = selected[0].cluster_color
-		if color is None:
-			color = 3
-		self.load_subclustering(None, color = color, gradient = True, store_subcluster = False)
-	
 	def load_distance(self, sample_id):
 		
-		D = combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Axis"])
+		pca_scores = self.get_pca()
+		D = squareform(pdist(pca_scores))
 		
 		data = {} # {sample_id: [rounded distance, distance, order], ...}
 		idx0 = self.sample_ids.index(sample_id)
-		idxs = np.argsort(D[idx0])
-		i = 0
-		for idx1 in idxs:
+		idxs = np.argsort(D[idx0]).tolist()
+		for sample in self.samples:
+			idx1 = self.sample_ids.index(sample.id)
+			sample.row = idxs.index(idx1)
 			d = D[idx0,idx1]
-			data[self.sample_ids[idx1]] = [str(round(d, 2)), d, i]
-			i += 1
-		for sample in self.samples:
-			sample.cluster = None
-		
-		self.update_captions(data)
-		self.view.image_lst.scrollToTop()
-	
-	def load_ids(self):
-		
-		data = {} # {sample_id: [label, value, order], ...}
-		sorted_ids = natsorted(self.sample_ids)
-		for i in range(len(sorted_ids)):
-			sample_id = sorted_ids[i]
-			data[sample_id] = [sample_id, sample_id, i]
-		self.update_captions(data)
-		for sample in self.samples:
-			sample.cluster = None
-		self.view.image_lst.scrollToTop()
-	
-	def update_captions(self, data):
-		# data = {sample_id: [label, value, order], ...}
-		
-		for sample in self.samples:
-			label, value, order = data[sample.id]
-			sample.row = order
-			sample.value = value
-			sample.label = label
+			sample.value = d
+			sample.label = str(round(d, 2))
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
-		
 		self.view.image_lst.reload()
+		self.view.image_lst.scrollToTop()
+
+	def populate_distmax_ordering(self):
+		
+		pca_scores = self.get_pca()
+		ordering = get_distmax_ordering(pca_scores)
+		ordering = dict([(self.sample_ids[idx], ordering[idx]) for idx in ordering])  # {sample_id: row, ...}
+		self.distmax_ordering = {}  # {row: sample_id, ...}
+		for sample_id in ordering:
+			self.distmax_ordering[ordering[sample_id]] = sample_id
+		return ordering
+
+	def load_distmax(self):
+		
+		if self.distmax_ordering:
+			ordering = {}  # {sample_id: row, ...}
+			for row in self.distmax_ordering:
+				ordering[self.distmax_ordering[row]] = row
+		else:
+			ordering = self.populate_distmax_ordering()
+		
+		# ordering = {sample_id: order, ...}
+		for sample in self.samples:
+			order = ordering[sample.id]
+			sample.row = order
+			sample.value = sample.id
+			sample.label = sample.id
+		self.samples = sorted(self.samples, key = lambda sample: sample.row)
+		self.view.image_lst.reload()
+		self.view.image_lst.scrollToTop()
+	
+	def browse_distmax(self, direction):
+		
+		if not self.distmax_ordering:
+			self.populate_distmax_ordering()
+		# self.distmax_ordering = {row: sample_id, ...}
+		
+		selected = self.view.get_selected()
+		if selected:
+			sample_id = selected[0].id
+			direction = 0
+		else:
+			sample_id = self.samples[0].id
+			if isinstance(self.samples[0].value, str):
+				direction = 0
+		for row in self.distmax_ordering:
+			if self.distmax_ordering[row] == sample_id:
+				break
+		if direction == -1:
+			if row > 0:
+				row -= 1
+		elif direction == 1:
+			if row < len(self.sample_ids) - 1:
+				row += 1
+		sample_id = self.distmax_ordering[row]
+		self.load_distance(sample_id)
+	
+	def sort_by_cluster0(self):
+		
+		D = self.get_distance()
+		pca_scores = self.get_pca(D)
+		sample_labels = get_sample_labels(pca_scores)
+		sample_labels = dict([(self.sample_ids[idx], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
+		for sample in self.samples:
+			sample.value = sample_labels[sample.id]
+		self.samples = natsorted(self.samples, key = lambda sample: sample.value)
+		for row in range(len(self.samples)):
+			self.samples[row].row = row
+		self.view.image_lst.reload()
+		
+	def split_cluster(self, selected_sample):
+		
+		supercluster = selected_sample.cluster
+		if supercluster:
+			sample_idxs = [self.sample_ids.index(sample.id) for sample in self.samples if sample.cluster == supercluster]
+		else:
+			sample_idxs = [self.sample_ids.index(sample.id) for sample in self.samples]
+		
+		D = self.get_distance()[:,sample_idxs][sample_idxs]
+		pca_scores = self.get_pca(D)
+		
+		sample_labels = get_sample_labels(pca_scores)
+		sample_labels = dict([(self.sample_ids[sample_idxs[idx]], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
+		labels_new = set()
+		for sample_id in sample_labels:
+			labels_new.add(".".join(sample_labels[sample_id].split(".")[:2]))
+		label1 = sorted(list(labels_new))[0]
+		clusters = {} # {sample_id: cluster, ...}
+		labels = {}  # {sample_id: label, ...}
+		for idx in sample_idxs:
+			sample_id = self.sample_ids[idx]
+			i = 1 if sample_labels[sample_id].startswith(label1) else 2
+			if supercluster:
+				clusters[sample_id] = "%s.%d" % (supercluster, i)
+				labels[sample_id] = "%s.%s" % (supercluster, sample_labels[sample_id])
+			else:
+				clusters[sample_id] = str(i)
+				labels[sample_id] = sample_labels[sample_id]
+		
+		for sample in self.samples:
+			if sample.id in clusters:
+				sample.cluster = clusters[sample.id]
+				sample.leaf = labels[sample.id]
+		self.load_clusters(selected_sample)
+	
+	def join_cluster(self, selected_sample):
+		
+		cluster = selected_sample.cluster
+		if not cluster:
+			return
+		
+		if "." not in cluster:
+			for sample in self.samples:
+				sample.cluster = None
+				sample.leaf = None
+			self.load_ids()
+			return
+		
+		supercluster = cluster.split(".")[:-1]
+		cluster = ".".join(supercluster)
+		for sample in self.samples:
+			if sample.cluster and (sample.cluster.split(".")[:-1] == supercluster):
+				sample.cluster = cluster
+		self.load_clusters(selected_sample)
+	
+	def load_clusters(self, selected_sample = None):
+		
+		cluster_last = None
+		ci = True
+		colors = [QtGui.QColor(210, 210, 210, 255), QtGui.QColor(128, 128, 128, 255)]
+		self.samples = natsorted(self.samples, key = lambda sample: [sample.cluster, sample.leaf])
+		for row in range(len(self.samples)):
+			cluster = self.samples[row].cluster
+			if not cluster:
+				return
+			self.samples[row].row = row
+			self.samples[row].value = self.samples[row].leaf
+			if cluster != cluster_last:
+				ci = not ci
+				cluster_last = cluster
+			self.samples[row].label = colors[int(ci)]
+		self.view.image_lst.reload()
+		if selected_sample is not None:
+			self.view.image_lst.scrollTo(selected_sample.index)
+			self.view.image_lst.set_selected([selected_sample.id])
+	
+	def has_clusters(self):
+		
+		for sample in self.samples:
+			if sample.has_cluster():
+				return True
+		return False
 	
 	def set_datasource(self, data_source):
 		
@@ -285,4 +275,7 @@ class Model(Store):
 	def launch_commander(self):
 		
 		self.dc = Commander(model = self)
-
+	
+	def on_selected(self):
+		
+		pass
