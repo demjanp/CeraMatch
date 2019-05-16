@@ -98,7 +98,7 @@ def hamming_dist(prof1, prof2, rasterize_factor = 10):
 	
 	# get maximum distance of a point from 0 from the shorter profile
 	maxsq = min(sumsq_1.max(), sumsq_2.max())
-	# trim both profiles to the lenght of the shorter
+	# trim both profiles to the length of the shorter
 	prof1 = prof1[sumsq_1 <= maxsq]
 	prof2 = prof2[sumsq_2 <= maxsq]
 	if (prof1.shape[0] <= 1) or (prof2.shape[0] <= 1):
@@ -123,9 +123,31 @@ def hamming_dist(prof1, prof2, rasterize_factor = 10):
 	return 1 - (2*(mask1 & mask2).sum()) / (mask1.sum() + mask2.sum())
 
 def landmark_dist(land1, land2):
-	# land1, land2 = top_vector, top_length, bottom_vector, bottom_length, break_vector
+	# land1, land2 = neck_vector, neck_length, upper_vector, upper_length, lower_vector, lower_length, break_vector
 	
-	return 0  # TODO
+	neck_vector1, neck_length1, upper_vector1, upper_length1, lower_vector1, lower_length1, break_vector1 = land1
+	neck_vector2, neck_length2, upper_vector2, upper_length2, lower_vector2, lower_length2, break_vector2 = land2
+	
+	mean_length1 = [length for length in [neck_length1, upper_length1, lower_length1] if length != 0]
+	mean_length1 = sum(mean_length1) / len(mean_length1)
+	mean_length2 = [length for length in [neck_length2, upper_length2, lower_length2] if length != 0]
+	mean_length2 = sum(mean_length2) / len(mean_length2)
+	
+	dist = 0
+	norm = 0
+	for vector1, length1, vector2, length2 in [
+		[neck_vector1, neck_length1, neck_vector2, neck_length2],
+		[upper_vector1, upper_length1, upper_vector2, upper_length2],
+		[lower_vector2, lower_length1, lower_vector2, lower_length2],
+		[break_vector1, 0, break_vector2, 0],
+	]:
+		if length1 == 0:
+			length1 = mean_length1
+		if length2 == 0:
+			length2 = mean_length2
+		dist += np.sqrt(((vector1 - vector2)**2).sum())*length1*length2
+		norm += 2*length1*length2
+	return dist / norm
 
 def axis_dist(prof1, params1, prof2, params2):
 	
@@ -266,114 +288,143 @@ def radius_dist(prof1, prof2):
 	return R_dist
 
 def get_landmarks(profile, bottom, thickness, params):
-	# returns rim, carination, axis_end
-	#	rim, carination, axis_end = [x, y]
+	# returns axis_start, concave, convex, axis_end; =[x, y]
 	
 	rim = get_rim(profile)
 	
 	profile = profile - rim
 	
-	axis = profile_axis(profile, params, inner_weight = 0.5)
+	axis_full = profile_axis(profile, params, inner_weight = 0.5)
 	
-	axis_cropped = axis[np.sqrt((axis**2).sum(axis = 1)) > 2*thickness]
-	if not axis_cropped.size:
-		axis_cropped = axis
+	# crop axis to avoid issues with rim and bottom
+	axis = axis_full[np.sqrt((axis_full**2).sum(axis = 1)) > 2*thickness]
+	if not axis.size:
+		axis = axis_full
 	elif bottom:
-		mask = (axis_cropped[:,1] < profile[:,1].max() - thickness)
+		mask = (axis[:,1] < profile[:,1].max() - thickness)
 		if mask.any():
-			axis_cropped = axis_cropped[mask]
+			axis = axis[mask]
 	
-	carination = None
+	dx, dy = axis[0] - axis[-1]
+	angle_max = np.abs(np.arctan(dy/dx)) + np.pi / 2
 	
-	# carination/belly is the widest part of the vessel
-	idx = np.where(axis_cropped[:,1] > 2*thickness)[0]
-	if idx.size:
-		idx = idx.min()
-		if (idx > 0) and (axis_cropped[idx:,0].max() > axis_cropped[:idx,0].max() + thickness / 2):
-			carination = axis_cropped[np.argmax(axis_cropped[:,0])]
+	iters = 100
+	# integrate y coordinates of the gradually rotated profile
+	integrated = np.zeros(axis.shape[0])
+	norm = np.zeros(axis.shape[0])
+	straight = np.vstack((np.linspace(0, axis[-1,0], axis.shape[0]), np.linspace(0, axis[-1,1], axis.shape[0]))).T
+	for angle in np.linspace(0, angle_max, iters):
+		rotated = rotate_profile(axis, -angle)[:,1]
+		integrated += (rotated - rotated.min())
+		rotated_straight = rotate_profile(straight, -angle)[:,1]
+		norm += (rotated_straight - rotated_straight.min())
+	integrated = (integrated - norm) / iters
 	
-	if carination is None:
-		# widest part is at the break
-		if abs(axis_cropped[:,0].max() - axis_cropped[-1,0]) < 0.2:
-			carination = axis_cropped[axis_cropped.shape[0] - 1]
+	concave = np.argmin(integrated)
+	convex = np.argmax(integrated)
 	
-	if carination is None:
-		dx, dy = axis_cropped[0] - axis_cropped[-1]
-		angle_max = np.abs(np.arctan(dy/dx)) + np.pi / 2
-		
-		iters = 100
-		# integrate y coordinates of the gradually rotated profile
-		integrated = np.zeros(axis_cropped.shape[0])
-		norm = np.zeros(axis_cropped.shape[0])
-		straight = np.vstack((np.linspace(0, axis_cropped[-1,0], axis_cropped.shape[0]), np.linspace(0, axis_cropped[-1,1], axis_cropped.shape[0]))).T
-		for angle in np.linspace(0, angle_max, iters):
-			rotated = rotate_profile(axis_cropped, -angle)[:,1]
-			integrated += (rotated - rotated.min())
-			rotated_straight = rotate_profile(straight, -angle)[:,1]
-			norm += (rotated_straight - rotated_straight.min())
-		integrated = (integrated - norm) / iters
-		
-		magnitude = min((integrated.max() - integrated[0]), (integrated.max() - integrated[-1])) / (thickness / 2)
-		
-		if magnitude < 0.1:
-			if axis[0,0] > axis_cropped[-1,0]:
-				carination = axis_cropped[0]
-			else:
-				carination = axis_cropped[-1]
+	axis_start = axis[0] + rim
+	axis_end = axis[-1] + rim
+	
+	if cdist([axis[concave] + rim], [axis_start, axis_end])[0].min() < 0.5:
+		concave = None
+	
+	if cdist([axis[convex] + rim], [axis_start, axis_end])[0].min() < 0.5:
+		convex = None
+	
+	if (concave is not None) and (convex is not None) and (concave > convex):
+		integrated = np.abs(integrated - integrated.mean())
+		if integrated[concave] > integrated[convex]:
+			convex = None
 		else:
-			idx = np.argmax(integrated)
-			if idx == 0:
-				carination = axis_cropped[0]
-			else:
-				carination = axis_cropped[idx]
+			concave = None
 	
-	rim, carination, axis_end = axis_cropped[0] + rim, carination + rim, axis_cropped[-1] + rim
+	if concave is not None:
+		concave = axis[concave] + rim
 	
-	# find intersection of axis with profile (landmark rim)
-	norm = np.sqrt(((carination - rim)**2).sum())
-	if norm > 0:
-		vector = (rim - carination) / norm
-	else:
-		norm = np.sqrt(((axis_end - rim)**2).sum())
-		vector = (rim - axis_end) / norm
-	d = np.sqrt(((rim - get_rim(profile))**2).sum())
-	rim = profile[np.argmin(cdist((rim + vector * np.arange(0, d * 4, 0.1)[:,None]), profile).min(axis = 0))]
+	if convex is not None:
+		convex = axis[convex] + rim
 	
-	return rim, carination, axis_end
+	if (concave is None) or cdist([concave], [axis_start, axis_end])[0].min() < 0.5:
+		concave = None
+	
+	if (convex is None) or cdist([convex], [axis_start, axis_end])[0].min() < 0.5:
+		convex = None
+	
+	# find intersection of axis with profile (axis_start)
+	for mark in [concave, convex, axis_end]:
+		if mark is None:
+			continue
+		norm = np.sqrt(((axis_start - mark)**2).sum())
+		if norm > 0:
+			vector = (axis_start - mark) / norm
+			break
+	d = np.sqrt(((axis_start - get_rim(profile))**2).sum())
+	axis_start = profile[np.argmin(cdist((axis_start + vector * np.arange(0, d * 4, 0.1)[:,None]), profile).min(axis = 0))]
+	
+	return axis_start, concave, convex, axis_end
 
-def get_landmark_vecors(rim, carination, axis_end, params)
-
-	top_vector = None
-	top_length = None
-	bottom_vector = None
-	bottom_length = None
+def get_landmark_vecors(axis_start, concave, convex, axis_end, params):
+	
+	neck_vector = None
+	neck_length = None
+	upper_vector = None
+	upper_length = None
+	lower_vector = None
+	lower_length = None
 	break_vector = None
 	
-	if not (carination == rim).all():
-		top_length = np.sqrt(((carination - rim)**2).sum())
-		top_vector = (carination - rim) / top_length
+	if concave is not None:
+		neck_length = np.sqrt(((concave - axis_start)**2).sum())
+		neck_vector = (concave - axis_start) / neck_length
 	
-	if not (axis_end == carination).all():
-		bottom_length = np.sqrt(((axis_end - carination)**2).sum())
-		bottom_vector = (axis_end - carination) / bottom_length
+	if convex is not None:
+		vector1 = concave if (concave is not None) else axis_start
 		
+		upper_length = np.sqrt(((convex - vector1)**2).sum())
+		upper_vector = (convex - vector1) / upper_length
+		
+		lower_length = np.sqrt(((axis_end - convex)**2).sum())
+		lower_vector = (axis_end - convex) / lower_length
+	
 	if params:
 		_, _, xd, yd = params
 		break_vector = np.array([xd, yd])
 	
-	if top_vector is None:
-		top_vector = bottom_vector
-		top_length = 1
-	if bottom_vector is None:
-		if break_vector is None:
-			bottom_vector = top_vector
+	if (concave is None) and (convex is None):
+		if axis_start[0] > axis_end[0]:
+			neck_length = np.sqrt(((axis_end - axis_start)**2).sum())
+			neck_vector = (axis_end - axis_start) / neck_length
 		else:
-			bottom_vector = break_vector
-		bottom_length = 1
-	if break_vector is None:
-		break_vector = bottom_vector
+			upper_length = np.sqrt(((axis_end - axis_start)**2).sum())
+			upper_vector = (axis_end - axis_start) / upper_length
 	
-	return [top_vector, top_length, bottom_vector, bottom_length, break_vector]
+	if neck_vector is None:
+		neck_length = 0
+		neck_vector = upper_vector
+	
+	if upper_vector is None:
+		if concave is not None:
+			upper_length = np.sqrt(((axis_end - concave)**2).sum())
+			upper_vector = (axis_end - concave) / upper_length
+		else:
+			upper_length = 0
+			if break_vector is not None:
+				upper_vector = break_vector
+			else:
+				upper_vector = neck_vector
+	
+	if lower_vector is None:
+		lower_length = 0
+		if break_vector is not None:
+			lower_vector = break_vector
+		else:
+			lower_vector = neck_vector
+	
+	if break_vector is None:
+		break_vector = lower_vector
+	
+	return [neck_vector, neck_length, upper_vector, upper_length, lower_vector, lower_length, break_vector]
 
 def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures, landmarks):
 	
@@ -394,7 +445,7 @@ def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents,
 		profile1, _, radius1, _, _ = profiles[sample_ids[i]]
 		profile2, _, radius2, _, _ = profiles[sample_ids[j]]
 		
-		land1 = landmarks[sample_ids[i]] # [top_vector1, top_length1, bottom_vector1, bottom_length1, break_vector1]
+		land1 = landmarks[sample_ids[i]] # [neck_vector1, neck_length1, upper_vector1, upper_length1, lower_vector1, lower_length1, break_vector1]
 		land2 = landmarks[sample_ids[j]]
 		
 		shifts1 = profile1[(profile1[:,1] == profile1[:,1].min())][:,0]
@@ -465,12 +516,12 @@ def calc_distances(profiles):
 	arc_lengths = {}
 	tangents = {}
 	curvatures = {}
-	landmarks = {} # {sample_id: [top_vector, top_length, bottom_vector, bottom_length, break_vector], ...}
+	landmarks = {} # {sample_id: [upper_vector, upper_length, lower_vector, lower_length, break_vector], ...}
 	for sample_id in profiles:
 		profile, bottom, radius, thickness, params = profiles[sample_id]
 		
-		rim, carination, axis_end = get_landmarks(profile, bottom, thickness, params)
-		landmarks[sample_id] = get_landmark_vecors(rim, carination, axis_end, params)
+		axis_start, concave, convex, axis_end = get_landmarks(profile, bottom, thickness, params)
+		landmarks[sample_id] = get_landmark_vecors(axis_start, concave, convex, axis_end, params)
 		
 		prof = profile + [radius, 0]
 		arc_lengths[sample_id] = arc_length(prof)
