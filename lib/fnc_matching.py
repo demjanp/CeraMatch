@@ -1,5 +1,4 @@
 import numpy as np
-from skimage import measure
 import multiprocessing as mp
 from natsort import natsorted
 from PIL import Image, ImageDraw
@@ -8,12 +7,7 @@ from collections import defaultdict
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist, pdist
 from scipy.spatial.distance import squareform
-from scipy.cluster.hierarchy import dendrogram, linkage, fcluster, cophenet
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-
-def reduce_profile(profile, d_min):
-	
-	return measure.approximate_polygon(np.array(profile), d_min)
+from scipy.cluster.hierarchy import linkage, fcluster
 
 def profile_length(profile):
 	
@@ -54,6 +48,32 @@ def axis_params(points):
 		xd /= div
 		yd /= div
 	return x0, y0, xd, yd
+
+def profile_axis(profile, params, step = 0.2, inner_weight = 0.5):
+	# step: generate axis point every stem mm
+	# inner_weight: weight of the inner profile when calculating the axis
+	
+	idx_rim = np.argmin(cdist([get_rim(profile)], profile)[0])
+	profile = fftsmooth(profile, 0.1, params)
+	inner = profile[:idx_rim][::-1]
+	outer = profile[idx_rim:]
+	d_inner = np.sqrt((inner**2).sum(axis = 1))
+	d_outer = np.sqrt((outer**2).sum(axis = 1))
+	d_max = min(d_inner.max(), d_outer.max())
+	d_min = max(d_inner[d_inner > 0].min(), d_outer[d_outer > 0].min())
+	collect = [[0,0]]
+	for d in np.arange(d_min, d_max, step):
+		collect.append((inner[d_inner > d][0]*inner_weight + outer[d_outer > d][0]*(1 - inner_weight)))
+		if cdist([collect[-1]], [collect[-2]])[0][0] < step:
+			del collect[-1]
+	return np.array(collect)
+
+def rotate_profile(profile, angle):
+	
+	ca = np.cos(angle)
+	sa = np.sin(angle)
+	rot_matrix = np.array([[ca, sa],[-sa, ca]])
+	return np.dot(profile, rot_matrix.T)
 
 def diameter_dist(radius1, radius2):
 	
@@ -101,6 +121,11 @@ def hamming_dist(prof1, prof2, rasterize_factor = 10):
 	img.close()
 	
 	return 1 - (2*(mask1 & mask2).sum()) / (mask1.sum() + mask2.sum())
+
+def landmark_dist(land1, land2):
+	# land1, land2 = top_vector, top_length, bottom_vector, bottom_length, break_vector
+	
+	return 0  # TODO
 
 def axis_dist(prof1, params1, prof2, params2):
 	
@@ -174,30 +199,48 @@ def axis_dist(prof1, params1, prof2, params2):
 	dsq = min(1, (((y1 - y2)**2 + (x1 - x2)**2)**0.5) / (2*(min(sumsq_1_max, sumsq_2_max)**0.5)))
 	return ((dax**2 + dsq**2)**0.5) / (2**0.5)
 
-def arc_length(profile, pad0 = False):
+def arc_length(profile):
 	
-	ds = np.sqrt((np.diff(profile, axis = 0) ** 2).sum(axis = 1))
-	if pad0:
-		ds = np.hstack(([0], ds))
-	s = np.cumsum(ds)
+	dx = np.gradient(profile[:,0])
+	dy = np.gradient(profile[:,1])
+	s = np.cumsum(np.sqrt(dx**2 + dy**2))
 	s -= s[np.argmin(cdist([get_rim(profile)], profile)[0])]
 	return s
 
 def tangent(profile):
 	
-	dx, dy = np.diff(profile, axis = 0).T	
-	th = (dy / dx)
-	th[dx == 0] = 0
+	dx = np.gradient(profile[:,0])
+	dy = np.gradient(profile[:,1])
+	th = np.zeros(profile.shape[0])
+	mask = (dx != 0)
+	th[mask] = (dy[mask] / dx[mask])
 	return th
 
-def fftsmooth(signal):
+def fftsmooth(profile, threshold = 0.2, params = None):
 	
-	fft = np.fft.fft(signal)
-	freq = np.fft.fftfreq(signal.shape[0])
-	cutoff = 0.2
-	fft[np.abs(freq) > cutoff] = 0
-	filtered = np.fft.ifft(fft)
-	return filtered.real
+	if profile.shape[0] < 5:
+		return profile
+	
+	# extend profile at break point by 100 mm if params are available
+	if params:
+		_, _, xd, yd = params
+		step = 0.1
+		line = np.vstack((xd * np.arange(0, 100, step), yd * np.arange(0, 100, step))).T
+		profile = np.vstack((profile[0] + line[::-1], profile, profile[-1] + line))
+	
+	# make sure profile line is closed
+	pnt0 = (profile[0] + profile[-1]) / 2
+	profile = np.vstack(([pnt0], profile, [pnt0]))
+	
+	fft = np.fft.fft2(profile)
+	freq = np.abs(np.fft.fftfreq(profile.shape[0]))
+	fft[np.abs(freq) > threshold] = 0
+	profile = np.fft.ifft2(fft)[1:-1].real
+	
+	if params:
+		profile = profile[line.shape[0]:-line.shape[0]]
+	
+	return profile
 
 def interpolate_signal(s, signal, s_min, s_max, resolution = 0.1):
 	
@@ -206,8 +249,8 @@ def interpolate_signal(s, signal, s_min, s_max, resolution = 0.1):
 
 def radius_dist(prof1, prof2):
 	
-	R1 = prof1[1:,0]
-	R2 = prof2[1:,0]
+	R1 = prof1[:,0]
+	R2 = prof2[:,0]
 	s1 = arc_length(prof1)
 	s2 = arc_length(prof2)
 	s_min, s_max = max(s1.min(), s2.min()), min(s1.max(), s2.max())
@@ -222,7 +265,117 @@ def radius_dist(prof1, prof2):
 	
 	return R_dist
 
-def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures):
+def get_landmarks(profile, bottom, thickness, params):
+	# returns rim, carination, axis_end
+	#	rim, carination, axis_end = [x, y]
+	
+	rim = get_rim(profile)
+	
+	profile = profile - rim
+	
+	axis = profile_axis(profile, params, inner_weight = 0.5)
+	
+	axis_cropped = axis[np.sqrt((axis**2).sum(axis = 1)) > 2*thickness]
+	if not axis_cropped.size:
+		axis_cropped = axis
+	elif bottom:
+		mask = (axis_cropped[:,1] < profile[:,1].max() - thickness)
+		if mask.any():
+			axis_cropped = axis_cropped[mask]
+	
+	carination = None
+	
+	# carination/belly is the widest part of the vessel
+	idx = np.where(axis_cropped[:,1] > 2*thickness)[0]
+	if idx.size:
+		idx = idx.min()
+		if (idx > 0) and (axis_cropped[idx:,0].max() > axis_cropped[:idx,0].max() + thickness / 2):
+			carination = axis_cropped[np.argmax(axis_cropped[:,0])]
+	
+	if carination is None:
+		# widest part is at the break
+		if abs(axis_cropped[:,0].max() - axis_cropped[-1,0]) < 0.2:
+			carination = axis_cropped[axis_cropped.shape[0] - 1]
+	
+	if carination is None:
+		dx, dy = axis_cropped[0] - axis_cropped[-1]
+		angle_max = np.abs(np.arctan(dy/dx)) + np.pi / 2
+		
+		iters = 100
+		# integrate y coordinates of the gradually rotated profile
+		integrated = np.zeros(axis_cropped.shape[0])
+		norm = np.zeros(axis_cropped.shape[0])
+		straight = np.vstack((np.linspace(0, axis_cropped[-1,0], axis_cropped.shape[0]), np.linspace(0, axis_cropped[-1,1], axis_cropped.shape[0]))).T
+		for angle in np.linspace(0, angle_max, iters):
+			rotated = rotate_profile(axis_cropped, -angle)[:,1]
+			integrated += (rotated - rotated.min())
+			rotated_straight = rotate_profile(straight, -angle)[:,1]
+			norm += (rotated_straight - rotated_straight.min())
+		integrated = (integrated - norm) / iters
+		
+		magnitude = min((integrated.max() - integrated[0]), (integrated.max() - integrated[-1])) / (thickness / 2)
+		
+		if magnitude < 0.1:
+			if axis[0,0] > axis_cropped[-1,0]:
+				carination = axis_cropped[0]
+			else:
+				carination = axis_cropped[-1]
+		else:
+			idx = np.argmax(integrated)
+			if idx == 0:
+				carination = axis_cropped[0]
+			else:
+				carination = axis_cropped[idx]
+	
+	rim, carination, axis_end = axis_cropped[0] + rim, carination + rim, axis_cropped[-1] + rim
+	
+	# find intersection of axis with profile (landmark rim)
+	norm = np.sqrt(((carination - rim)**2).sum())
+	if norm > 0:
+		vector = (rim - carination) / norm
+	else:
+		norm = np.sqrt(((axis_end - rim)**2).sum())
+		vector = (rim - axis_end) / norm
+	d = np.sqrt(((rim - get_rim(profile))**2).sum())
+	rim = profile[np.argmin(cdist((rim + vector * np.arange(0, d * 4, 0.1)[:,None]), profile).min(axis = 0))]
+	
+	return rim, carination, axis_end
+
+def get_landmark_vecors(rim, carination, axis_end, params)
+
+	top_vector = None
+	top_length = None
+	bottom_vector = None
+	bottom_length = None
+	break_vector = None
+	
+	if not (carination == rim).all():
+		top_length = np.sqrt(((carination - rim)**2).sum())
+		top_vector = (carination - rim) / top_length
+	
+	if not (axis_end == carination).all():
+		bottom_length = np.sqrt(((axis_end - carination)**2).sum())
+		bottom_vector = (axis_end - carination) / bottom_length
+		
+	if params:
+		_, _, xd, yd = params
+		break_vector = np.array([xd, yd])
+	
+	if top_vector is None:
+		top_vector = bottom_vector
+		top_length = 1
+	if bottom_vector is None:
+		if break_vector is None:
+			bottom_vector = top_vector
+		else:
+			bottom_vector = break_vector
+		bottom_length = 1
+	if break_vector is None:
+		break_vector = bottom_vector
+	
+	return [top_vector, top_length, bottom_vector, bottom_length, break_vector]
+
+def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures, landmarks):
 	
 	profiles_n = len(profiles)
 	distance = np.zeros((profiles_n, profiles_n, 6), dtype = float) - 2
@@ -238,29 +391,31 @@ def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents,
 			print("\rcombs left: %d                       " % (len(ijs_mp)), end = "")
 			cnt_last = cnt
 		
-		profile1, radius1, params1 = profiles[sample_ids[i]]
-		profile2, radius2, params2 = profiles[sample_ids[j]]
+		profile1, _, radius1, _, _ = profiles[sample_ids[i]]
+		profile2, _, radius2, _, _ = profiles[sample_ids[j]]
+		
+		land1 = landmarks[sample_ids[i]] # [top_vector1, top_length1, bottom_vector1, bottom_length1, break_vector1]
+		land2 = landmarks[sample_ids[j]]
 		
 		shifts1 = profile1[(profile1[:,1] == profile1[:,1].min())][:,0]
 		shifts2 = profile2[(profile2[:,1] == profile2[:,1].min())][:,0]
 		
 		h_dist = np.inf
-		ax_dist = np.inf
+		land_dist = np.inf
 		R_dist = np.inf
 		
 		for shift1 in shifts1:
 			for shift2 in shifts2:
 				h_dist = min(h_dist, hamming_dist(profile1 - [shift1, 0], profile2 - [shift2, 0]))
-				ax = axis_dist(profile1 - [shift1, 0], params1, profile2 - [shift2, 0], params2)
-				if ax > -1:
-					ax_dist = min(ax_dist, ax)
+		
+		shifts1 = profile1[(profile1[:,1] == profile1[:,1].min())][:,0]
+		shifts2 = profile2[(profile2[:,1] == profile2[:,1].min())][:,0]
+		for shift1 in shifts1:
+			for shift2 in shifts2:		
 				R_dist = min(R_dist, radius_dist(profile1 - [shift1, 0] + [radius1, 0], profile2 - [shift2, 0] + [radius2, 0]))
 		
-#		h_dist = hamming_dist(profile1, profile2)
-#		ax_dist = axis_dist(profile1, params1, profile2, params2)
-#		R_dist = radius_dist(profile1 + [radius1, 0], profile2 + [radius2, 0])
-		
 		diam_dist = diameter_dist(radius1, radius2)
+		land_dist = landmark_dist(land1, land2)
 		
 		# shape distances
 		s1 = arc_lengths[sample_ids[i]].copy()
@@ -290,19 +445,19 @@ def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents,
 		distance[i, j, 2] = kap_dist
 		distance[i, j, 3] = h_dist
 		distance[i, j, 4] = diam_dist
-		distance[i, j, 5] = ax_dist
+		distance[i, j, 5] = land_dist
 		
 		distance[j, i, 0] = R_dist
 		distance[j, i, 1] = th_dist
 		distance[j, i, 2] = kap_dist
 		distance[j, i, 3] = h_dist
 		distance[j, i, 4] = diam_dist
-		distance[j, i, 5] = ax_dist
+		distance[j, i, 5] = land_dist
 		
 	collect_mp.append(distance)
 	
 def calc_distances(profiles):
-	# profiles[sample_id] = [profile, radius, params]
+	# profiles[sample_id] = [profile, bottom, radius, thickness, params]
 	
 	profiles_n = len(profiles)
 	sample_ids = list(profiles.keys())
@@ -310,19 +465,25 @@ def calc_distances(profiles):
 	arc_lengths = {}
 	tangents = {}
 	curvatures = {}
+	landmarks = {} # {sample_id: [top_vector, top_length, bottom_vector, bottom_length, break_vector], ...}
 	for sample_id in profiles:
-		prof = profiles[sample_id][0] + [profiles[sample_id][1], 0]
+		profile, bottom, radius, thickness, params = profiles[sample_id]
+		
+		rim, carination, axis_end = get_landmarks(profile, bottom, thickness, params)
+		landmarks[sample_id] = get_landmark_vecors(rim, carination, axis_end, params)
+		
+		prof = profile + [radius, 0]
 		arc_lengths[sample_id] = arc_length(prof)
-		tangents[sample_id] = fftsmooth(tangent(prof))
-		curvatures[sample_id] = np.hstack(([0], np.diff(tangents[sample_id])))
-	
+		tangents[sample_id] = tangent(prof)
+		curvatures[sample_id] = np.gradient(tangents[sample_id])
+		
 	manager = mp.Manager()
-	ijs_mp = manager.list(combinations(range(profiles_n), 2))
+	ijs_mp = manager.list(list(combinations(range(profiles_n), 2)))
 	collect_mp = manager.list()
 	
 	procs = []
 	for pi in range(mp.cpu_count()):
-		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures)))
+		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures, landmarks)))
 		procs[-1].start()
 	for proc in procs:
 		proc.join()
@@ -330,7 +491,7 @@ def calc_distances(profiles):
 		proc.terminate()
 		proc = None
 	
-	distance = np.ones((profiles_n, profiles_n, 6), dtype = float) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist], ; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dists = components of morphometric distance
+	distance = np.ones((profiles_n, profiles_n, 6), dtype = float) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist], ; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist = components of morphometric distance
 	for i in range(profiles_n):
 		distance[i,i,:] = 0
 	
@@ -340,22 +501,22 @@ def calc_distances(profiles):
 	
 	return distance
 
-def combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_ax):
-	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist]; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist = components of morphometric distance
+def combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_land):
+	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist]; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist = components of morphometric distance
 	
 	combined = np.ones(distance.shape[:2])
 	
-	w_sum = sum([w_R, w_th, w_kap, w_h, w_diam, w_ax])
-	w_R, w_th, w_kap, w_h, w_diam, w_ax = [w / w_sum for w in [w_R, w_th, w_kap, w_h, w_diam, w_ax]]
+	w_sum = sum([w_R, w_th, w_kap, w_h, w_diam, w_land])
+	w_R, w_th, w_kap, w_h, w_diam, w_land = [w / w_sum for w in [w_R, w_th, w_kap, w_h, w_diam, w_land]]
 	
 	dists = [None] * 6
 	for idx in range(6):
 		dists[idx] = distance[:,:,idx]
-	R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist = dists
+	R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist = dists
 	
-	ax_dist[ax_dist == -1] = ax_dist[ax_dist > -1].mean()
+	land_dist[land_dist == -1] = land_dist[land_dist > -1].mean()
 	
-	combined = R_dist * w_R + th_dist * w_th + kap_dist * w_kap + h_dist * w_h + diam_dist * w_diam + ax_dist * w_ax
+	combined = R_dist * w_R + th_dist * w_th + kap_dist * w_kap + h_dist * w_h + diam_dist * w_diam + land_dist * w_land
 	
 	for i in range(combined.shape[0]):
 		combined[i,i] = 0
@@ -423,12 +584,3 @@ def get_sample_labels(distance):
 	
 	return sample_labels
 
-def get_2_clusters(distance):
-	
-	z = linkage(distance, method = "ward") # [[idx1, idx2, dist, sample_count], ...]
-	clusters = np.array(fcluster(z, 2, "maxclust"), dtype = int)
-	clust1 = np.where(clusters == 1)[0]
-	clust2 = np.where(clusters == 2)[0]
-	
-	return clust1, clust2
-	

@@ -1,0 +1,68 @@
+1. set weights & check clustering
+2. browse distances & click farthest neighbour
+3. produce final clustering
+
+----------
+
+Landmarks:
+
+3 parts of the body:
+	1. top: rim to carination	(length & angle)
+	2. bottom: max. radius to bottom or break	(length & angle)
+	3. break: break lines	(angle)
+
+compare 1-1, 2-2, 3-3
+weigh 1 & 2 by ratio of profile they cover (no. of observations = length)
+do not weigh 3 (one observation = length 1)
+
+landmark distance = 
+(
+	(distance of top vectors)*length_top1*length_top1
+	+
+	(distance of bottom vectors)*length_bottom1*length_bottom2
+	+
+	(distance of break vectors)
+) / (length_top1*length_top1 + length_bottom1*length_bottom2 + 1)
+
+
+1: top
+2: bottom
+3: break
+
+   \-----1
+    \	 
+    /----2
+   /
+ / /-----3
+  
+   \-----1
+    \   
+    \ \--2, 3
+  
+   \-----1
+    \   
+   / /---2, 3
+
+     /---1, 2
+    /
+  / /----3
+
+   \-----1
+    \ 
+    /----2, 3
+   /  
+¯¯¯
+
+      /--1, 2, 3
+     /
+    /
+   /
+¯¯¯  
+
+----------
+
+GUI:
+
+zobrazovat thumbnails v niekolkych standardnych skalach
+
+show dendrogram with prototypes

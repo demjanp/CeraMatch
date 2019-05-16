@@ -8,3 +8,8 @@ if __name__ == '__main__':
 	
 	gui = CeraMatchMain()
 
+# for pyinstaller:
+from sklearn.decomposition import *
+import sklearn.neighbors.typedefs
+import numpy as np
+from scipy._lib.messagestream import *

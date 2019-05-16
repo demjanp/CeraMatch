@@ -1,6 +1,7 @@
 from deposit import Store
 from lib.fnc_matching import *
 
+from skimage.measure import find_contours
 from scipy.spatial.distance import cdist
 from PIL import Image, ImageDraw
 import numpy as np
@@ -61,6 +62,7 @@ for id in store.classes["Sample"].objects:
 	bottom = bool(int(obj.descriptors["Bottom"].label.value))
 	radius = obj.descriptors["Radius"].label.value
 	norm_length = float(obj.descriptors["Norm_Length"].label.value)
+	thickness = float(obj.descriptors["Thickness"].label.value)
 	
 	if (not bottom) and (norm_length < 6):
 		continue
@@ -123,27 +125,59 @@ for id in store.classes["Sample"].objects:
 	
 	[x0, y0], [x1, y1] = profile.min(axis = 0), profile.max(axis = 0)
 	x0, y0, x1, y1 = int(x0) - 1, int(y0) - 1, int(x1) + 1, int(y1) + 1
-	w, h = x1 - x0, y1 - y0
+	w, h = (x1 - x0) + 2, (y1 - y0) + 2
 	
 	img = Image.new("1", (w * RASTERIZE_FACTOR, h * RASTERIZE_FACTOR))
 	draw = ImageDraw.Draw(img)
-	draw.line([(x, y) for x, y in ((profile - [x0, y0]) * RASTERIZE_FACTOR).astype(int)], fill = 1)
-	outline = np.argwhere(np.array(img, dtype = bool).T) / RASTERIZE_FACTOR
+	
+	draw.polygon([(x + 1, y + 1) for x, y in ((profile - [x0, y0]) * RASTERIZE_FACTOR).astype(int)], fill = 1)
+	contours = find_contours(np.array(img, dtype = bool).T, 0)
+	contours = sorted(contours, key = lambda contour: len(contour))
+	outline = contours[-1] / RASTERIZE_FACTOR
+	
 	img.close()
 	
 	profile -= profile.min(axis = 0)
 	outline -= outline.min(axis = 0)
-	collect_profile = []
-	for point in profile:
-		x, y = outline[np.argmin(cdist([point], outline)[0])]
-		if [x, y] not in collect_profile:
-			collect_profile.append([x, y])
-	profile = np.array(collect_profile)
+	
+	collect_outline = []
+	step = 0.2
+	for point in outline:
+		if (not collect_outline) or (cdist([point], [collect_outline[-1]])[0][0] >= step):
+			collect_outline.append(point)
+	outline = np.array(collect_outline)
+	
+	outline = set_idx0_to_point(outline, (profile[0] + profile[-1]) / 2)
+	
+	idx0, idx1 = 0, 0
+	di = 0
+	while idx0 == idx1:
+		idx0 = np.argmin(cdist([profile[di]], outline)[0])
+		idx1 = np.argmin(cdist([profile[-(1+di)]], outline)[0])
+		di += 1
+	if idx0 > idx1:
+		idx0, idx1 = idx1, idx0
+	
+	dx = np.gradient(outline[:,0])
+	dy = np.gradient(outline[:,1])
+	ds = np.sqrt(dx**2 + dy**2)
+	if ds[idx0:idx1].sum() < ds[:idx0].sum() + ds[idx1:].sum():
+		outline = np.vstack((outline[:idx0], outline[idx1:]))
+	else:
+		outline = outline[idx0:idx1]
+	
+	profile = fftsmooth(outline, params = params)
 	
 	profile = profile - get_rim(profile)
+	idx_rim = np.argmin(cdist([[0,0]], profile)[0])
+	if profile[idx_rim + 1,0] < profile[idx_rim - 1,0]:
+		profile = profile[::-1]
+		profile -= get_rim(profile)
 	
 	collect[sample_id] = dict(
+		bottom = bottom,
 		radius = radius,
+		thickness = thickness,
 		profile = profile.tolist(),
 		arc = arc,
 		break_params = params,

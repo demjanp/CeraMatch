@@ -17,6 +17,7 @@ if __name__ == '__main__':
 	#	bottom: True/False, 
 	#	oriented: True/False, 
 	#	radius: float, 
+	#	thickness: float, 
 	#	profile: [[x, y], ...], 
 	#	arc: [[x, y], ...],
 	#	breaks: [[[x, y], ...], [[x, y], ...]],
@@ -28,9 +29,11 @@ if __name__ == '__main__':
 	collect = {}
 	for sample_id in profiles:
 		profile = np.array(profiles[sample_id]["profile"])
+		bottom = np.array(profiles[sample_id]["bottom"])
 		radius = np.array(profiles[sample_id]["radius"])
+		thickness = np.array(profiles[sample_id]["thickness"])
 		params = profiles[sample_id]["break_params"]
-		collect[sample_id] = [profile, radius, params]
+		collect[sample_id] = [profile, bottom, radius, thickness, params]
 	profiles = collect
 	
 	profiles_n = len(profiles)
@@ -44,12 +47,13 @@ if __name__ == '__main__':
 	# normalize by ensemble average (see Karasik and Smilansky 2011)
 	avg_R, avg_th, avg_kap = 0, 0, 0
 	for sample_id in profiles:
-		prof = profiles[sample_id][0] + [profiles[sample_id][1], 0]
+		profile, _, radius, _, _ = profiles[sample_id]
+		prof = fftsmooth(profile + [radius, 0])
 		L = np.abs(arc_length(prof)).sum()
 		avg_R += np.sqrt((prof[1:,0]**2).sum() / L)
-		th = fftsmooth(tangent(prof))
+		th = tangent(prof)
 		avg_th += np.sqrt((th**2).sum() / L)
-		avg_kap += np.sqrt((np.hstack(([0], np.diff(th)))**2).sum() / L)
+		avg_kap += np.sqrt((np.gradient(th)**2).sum() / L)
 	M = len(profiles)
 	avg_R, avg_th, avg_kap = avg_R / M, avg_th / M, avg_kap / M
 	distance[:,:,0] /= avg_R
@@ -57,5 +61,5 @@ if __name__ == '__main__':
 	distance[:,:,2] /= avg_kap
 	
 	np.save(fmatching, distance)
-	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist]
+	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist]
 

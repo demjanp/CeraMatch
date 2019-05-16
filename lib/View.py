@@ -142,7 +142,7 @@ class View(QtWidgets.QMainWindow):
 		if self.model.has_clusters():
 			self.model.load_clusters()
 		else:
-			self.model.sort_by_cluster0()
+			self.model.sort_by_leaf()
 	
 	def on_split_cluster(self, *args):
 		

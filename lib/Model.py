@@ -10,7 +10,7 @@ import json
 
 FSAMPLE_IDS = "data/matching_find_ids.json"
 FMATCHING = "data/matching.npy"
-DB_URL = "c:\\Documents\\AE_KAP_morpho\\db_typology\\kap_typology.json"
+DB_URL = "data\\db_typology\\kap_typology.json"
 
 class Model(Store):
 	
@@ -28,7 +28,7 @@ class Model(Store):
 			"Curvature": 0,
 			"Hamming": 0.10,
 			"Diameter": 0.30,
-			"Axis": 0.60,
+			"Landmarks": 0.60,
 		}
 #		for name in self.weights:
 #			self.weights[name] = 1/len(self.weights)
@@ -49,7 +49,7 @@ class Model(Store):
 			self.samples.append(Sample(sample_id, obj.descriptors["Reconstruction"].label, sample_id, sample_id, row))
 			row += 1
 		
-		self.distance = np.load(FMATCHING) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, ax_dist]
+		self.distance = np.load(FMATCHING) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist]
 		
 	def set_weight(self, name, value):
 		
@@ -68,7 +68,7 @@ class Model(Store):
 	
 	def get_distance(self):
 		
-		return combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Axis"])
+		return combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Landmarks"])
 	
 	def get_pca(self, D = None):
 		
@@ -165,19 +165,6 @@ class Model(Store):
 		sample_id = self.distmax_ordering[row]
 		self.load_distance(sample_id)
 	
-	def sort_by_cluster0(self):
-		
-		D = self.get_distance()
-		pca_scores = self.get_pca(D)
-		sample_labels = get_sample_labels(pca_scores)
-		sample_labels = dict([(self.sample_ids[idx], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
-		for sample in self.samples:
-			sample.value = sample_labels[sample.id]
-		self.samples = natsorted(self.samples, key = lambda sample: sample.value)
-		for row in range(len(self.samples)):
-			self.samples[row].row = row
-		self.view.image_lst.reload()
-		
 	def split_cluster(self, selected_sample):
 		
 		supercluster = selected_sample.cluster
@@ -233,8 +220,39 @@ class Model(Store):
 				sample.cluster = cluster
 		self.load_clusters(selected_sample)
 	
+	def update_leaves(self):
+		
+		D = self.get_distance()
+		clusters = defaultdict(list)  # {cluster: [sample_idx, ...], ...}
+		for sample in self.samples:
+			if sample.cluster:
+				clusters[sample.cluster].append(self.sample_ids.index(sample.id))
+		if not clusters:
+			pca_scores = self.get_pca(D)
+			sample_labels = get_sample_labels(pca_scores)
+			sample_labels = dict([(self.sample_ids[idx], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
+		else:
+			sample_labels = {}
+			for cluster in clusters:
+				pca_scores = self.get_pca(D[:,clusters[cluster]][clusters[cluster]])
+				clu_sample_labels = get_sample_labels(pca_scores)
+				for idx in clu_sample_labels:
+					sample_labels[self.sample_ids[clusters[cluster][idx]]] = clu_sample_labels[idx]
+		for sample in self.samples:
+			sample.value = sample_labels[sample.id]
+			sample.leaf = sample_labels[sample.id]
+	
+	def sort_by_leaf(self):
+		
+		self.update_leaves()
+		self.samples = natsorted(self.samples, key = lambda sample: sample.leaf)
+		for row in range(len(self.samples)):
+			self.samples[row].row = row
+		self.view.image_lst.reload()
+	
 	def load_clusters(self, selected_sample = None):
 		
+		self.update_leaves()
 		cluster_last = None
 		ci = True
 		colors = [QtGui.QColor(210, 210, 210, 255), QtGui.QColor(128, 128, 128, 255)]
@@ -279,3 +297,4 @@ class Model(Store):
 	def on_selected(self):
 		
 		pass
+

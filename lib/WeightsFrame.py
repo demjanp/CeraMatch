@@ -4,7 +4,7 @@ from PySide2 import (QtWidgets, QtCore, QtGui)
 
 SLIDERS = [
 	["Diameter", 0, 100],
-	["Axis", 0, 100],
+	["Landmarks", 0, 100],
 	["Hamming", 0, 100],
 	["Radius", 0, 100],
 	["Tangent", 0, 100],
