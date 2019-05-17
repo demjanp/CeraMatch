@@ -7,6 +7,7 @@ from PySide2 import (QtCore, QtGui)
 from natsort import (natsorted)
 import numpy as np
 import json
+import os
 
 FSAMPLE_IDS = "data/matching_find_ids.json"
 FMATCHING = "data/matching.npy"
@@ -28,10 +29,11 @@ class Model(Store):
 			"Curvature": 0,
 			"Hamming": 0.10,
 			"Diameter": 0.30,
-			"Landmarks": 0.60,
+			"Axis": 0.60,
 		}
 #		for name in self.weights:
 #			self.weights[name] = 1/len(self.weights)
+		self.cluster_weights = {} # {name: weights, ...}
 		
 		Store.__init__(self, parent = self.view)
 		
@@ -49,7 +51,7 @@ class Model(Store):
 			self.samples.append(Sample(sample_id, obj.descriptors["Reconstruction"].label, sample_id, sample_id, row))
 			row += 1
 		
-		self.distance = np.load(FMATCHING) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist]
+		self.distance = np.load(FMATCHING) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist]
 		
 	def set_weight(self, name, value):
 		
@@ -66,9 +68,14 @@ class Model(Store):
 			self.weights[name2] = float(values[idx])
 			self.view.weights_frame.set_slider(name2, int(round(self.weights[name2] * 100)))
 	
+	def set_weights(self, weights):
+		
+		self.weights.update(weights)
+		self.view.weights_frame.reload()
+	
 	def get_distance(self):
 		
-		return combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Landmarks"])
+		return combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Axis"])
 	
 	def get_pca(self, D = None):
 		
@@ -80,7 +87,7 @@ class Model(Store):
 		pca = PCA(n_components = n_components)
 		pca.fit(D)
 		return pca.transform(D)
-		
+	
 	def load_ids(self):
 		
 		sorted_ids = natsorted(self.sample_ids)
@@ -91,7 +98,7 @@ class Model(Store):
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
 		self.view.image_lst.reload()
 		self.view.image_lst.scrollToTop()
-		
+	
 	def load_distance(self, sample_id):
 		
 		pca_scores = self.get_pca()
@@ -182,7 +189,7 @@ class Model(Store):
 		for sample_id in sample_labels:
 			labels_new.add(".".join(sample_labels[sample_id].split(".")[:2]))
 		label1 = sorted(list(labels_new))[0]
-		clusters = {} # {sample_id: cluster, ...}
+		clusters = {}  # {sample_id: cluster, ...}
 		labels = {}  # {sample_id: label, ...}
 		for idx in sample_idxs:
 			sample_id = self.sample_ids[idx]
@@ -198,7 +205,14 @@ class Model(Store):
 			if sample.id in clusters:
 				sample.cluster = clusters[sample.id]
 				sample.leaf = labels[sample.id]
-		self.load_clusters(selected_sample)
+		
+		clusters = set(clusters.values())
+		for cluster in clusters:
+			self.cluster_weights[cluster] = {}
+			for name in self.weights:
+				self.cluster_weights[cluster][name] = self.weights[name]
+		
+		self.populate_clusters(selected_sample)
 	
 	def join_cluster(self, selected_sample):
 		
@@ -218,7 +232,7 @@ class Model(Store):
 		for sample in self.samples:
 			if sample.cluster and (sample.cluster.split(".")[:-1] == supercluster):
 				sample.cluster = cluster
-		self.load_clusters(selected_sample)
+		self.populate_clusters(selected_sample)
 	
 	def update_leaves(self):
 		
@@ -250,7 +264,7 @@ class Model(Store):
 			self.samples[row].row = row
 		self.view.image_lst.reload()
 	
-	def load_clusters(self, selected_sample = None):
+	def populate_clusters(self, selected_sample = None):
 		
 		self.update_leaves()
 		cluster_last = None
@@ -293,6 +307,42 @@ class Model(Store):
 	def launch_commander(self):
 		
 		self.dc = Commander(model = self)
+	
+	def save_clusters(self, path):
+		
+		if not self.has_clusters():
+			return
+		
+		# self.cluster_weights = {name: weights, ...}
+		data = {} # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
+		for cluster in self.cluster_weights:
+			data[cluster] = dict(
+				weights = dict(self.cluster_weights[cluster].items()),
+				samples = [],
+			)
+		for sample in self.samples:
+			if sample.cluster:
+				data[sample.cluster]["samples"].append(sample.to_dict())
+		with open(path, "w") as f:
+			json.dump(data, f)
+	
+	def load_clusters(self, path):
+		
+		if not os.path.isfile(path):
+			return
+		with open(path, "r") as f:
+			data = json.load(f)  # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
+		self.cluster_weights = {}
+		self.sample_data = {} # {sample_id: sample_dict, ...}
+		for cluster in data:
+			self.cluster_weights[cluster] = {}
+			self.cluster_weights[cluster].update(data[cluster]["weights"])
+			for sample_dict in data[cluster]["samples"]:
+				self.sample_data[sample_dict["id"]] = sample_dict
+		for sample in self.samples:
+			if sample.id in self.sample_data:
+				sample.from_dict(self.sample_data[sample.id])
+		self.populate_clusters()
 	
 	def on_selected(self):
 		

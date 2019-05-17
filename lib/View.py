@@ -2,6 +2,7 @@ from lib.Model import (Model)
 from lib.ImageList import (ImageList)
 from lib.WeightsFrame import (WeightsFrame)
 from lib.FooterFrame import (FooterFrame)
+from lib.ToolBar import (ToolBar)
 from lib.StatusBar import (StatusBar)
 from lib.Button import (Button)
 
@@ -42,6 +43,7 @@ class View(QtWidgets.QMainWindow):
 		self.image_lst = ImageList(self)
 		self.footer_frame = FooterFrame(self)
 		self.weights_frame = WeightsFrame(self)
+		self.toolbar = ToolBar(self)
 		self.statusbar = StatusBar(self)
 		
 		self.samples_button = Button("Sort by Sample IDs", self.on_samples)
@@ -111,6 +113,9 @@ class View(QtWidgets.QMainWindow):
 			else:
 				text = "Label: %s, Sample ID: %s" % (selected[0].value, selected[0].id)
 			self.statusbar.message(text)
+			
+			if cluster in self.model.cluster_weights:
+				self.model.set_weights(self.model.cluster_weights[cluster])
 	
 	def on_slider(self, name, value):
 		
@@ -140,7 +145,7 @@ class View(QtWidgets.QMainWindow):
 		self.mode = self.MODE_CLUSTER
 		
 		if self.model.has_clusters():
-			self.model.load_clusters()
+			self.model.populate_clusters()
 		else:
 			self.model.sort_by_leaf()
 	

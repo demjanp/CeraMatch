@@ -4,7 +4,7 @@ from PySide2 import (QtWidgets, QtCore, QtGui)
 
 SLIDERS = [
 	["Diameter", 0, 100],
-	["Landmarks", 0, 100],
+	["Axis", 0, 100],
 	["Hamming", 0, 100],
 	["Radius", 0, 100],
 	["Tangent", 0, 100],
@@ -46,7 +46,8 @@ class WeightsFrame(QtWidgets.QFrame):
 		
 		pass
 
-	def on_reload(self):
+	def reload(self):
 		
-		self.load_weights(self.model.cluster_weights["main"])
+		for name in self.model.weights:
+			self.set_slider(name, int(round(self.model.weights[name] * 100)))
 

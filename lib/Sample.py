@@ -17,4 +17,19 @@ class Sample(object):
 		if self.cluster:
 			return True
 		return False
-
+	
+	def to_dict(self):
+		
+		return dict(
+			id = self.id,
+			value = self.value,
+			cluster = self.cluster,
+			leaf = self.leaf,
+		)
+	
+	def from_dict(self, data):
+		
+		self.id = data["id"]
+		self.value = data["value"]
+		self.cluster = data["cluster"]
+		self.leaf = data["leaf"]

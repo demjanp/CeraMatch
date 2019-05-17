@@ -1,10 +1,11 @@
-1. set weights & check clustering
-2. browse distances & click farthest neighbour
-3. produce final clustering
-
 ----------
 
 GUI:
+
+export clusters to pdf
+
+
+save clusters to deposit
 
 zobrazovat thumbnails v niekolkych standardnych skalach
 
