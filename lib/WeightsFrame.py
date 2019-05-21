@@ -1,4 +1,5 @@
 from lib.Slider import (Slider)
+from lib.Button import (Button)
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
 
@@ -25,14 +26,21 @@ class WeightsFrame(QtWidgets.QFrame):
 		self.layout().setContentsMargins(0, 0, 0, 0)
 		
 		self.group = QtWidgets.QGroupBox("Weights")
-		self.group.setLayout(QtWidgets.QGridLayout())
+		self.group.setLayout(QtWidgets.QVBoxLayout())
+		self.slider_frame = QtWidgets.QFrame()
+		self.slider_frame.setLayout(QtWidgets.QGridLayout())
+		self.slider_frame.layout().setContentsMargins(0, 0, 0, 0)
+		self.group.layout().addWidget(self.slider_frame)
 		self.layout().addWidget(self.group)
 		
 		for row in range(len(SLIDERS)):
 			name, val_min, val_max = SLIDERS[row]
 			self.sliders[name] = Slider(self.view, name, val_min, val_max)
-			self.group.layout().addWidget(QtWidgets.QLabel(name), row, 0)
-			self.group.layout().addWidget(self.sliders[name], row, 1)
+			self.slider_frame.layout().addWidget(QtWidgets.QLabel(name), row, 0)
+			self.slider_frame.layout().addWidget(self.sliders[name], row, 1)
+		
+		self.optimize_button = Button("Optimize", self.view.on_optimize)
+		self.group.layout().addWidget(self.optimize_button)
 		
 		for name in self.model.weights:
 			self.set_slider(name, int(round(self.model.weights[name] * 100)))
@@ -44,7 +52,7 @@ class WeightsFrame(QtWidgets.QFrame):
 	
 	def update(self):
 		
-		pass
+		self.optimize_button.setEnabled(len(self.view.get_selected()) > 1)
 
 	def reload(self):
 		

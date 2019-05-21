@@ -4,7 +4,9 @@ from lib.fnc_matching import *
 from lib.Sample import Sample
 
 from PySide2 import (QtCore, QtGui)
-from natsort import (natsorted)
+
+from natsort import natsorted
+from itertools import product
 import numpy as np
 import json
 import os
@@ -81,12 +83,28 @@ class Model(Store):
 		
 		if D is None:
 			D = self.get_distance()
+		if D.shape[0] < 2:
+			return None
 		pca = PCA(n_components = None)
 		pca.fit(D)
-		n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.9)[0].min()
+		n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.99)[0]
+		if not n_components.size:
+			return None
+		n_components = n_components.min()
 		pca = PCA(n_components = n_components)
 		pca.fit(D)
 		return pca.transform(D)
+	
+	def get_samples_clusters(self, samples = []):
+		
+		if not samples:
+			samples = self.samples
+		clusters = set()
+		for sample in samples:
+			if sample.cluster is None:
+				continue
+			clusters.add(sample.cluster)
+		return list(clusters)
 	
 	def load_ids(self):
 		
@@ -101,10 +119,7 @@ class Model(Store):
 	
 	def load_distance(self, sample_id):
 		
-		pca_scores = self.get_pca()
-		D = squareform(pdist(pca_scores))
-		
-		data = {} # {sample_id: [rounded distance, distance, order], ...}
+		D = self.get_distance()
 		idx0 = self.sample_ids.index(sample_id)
 		idxs = np.argsort(D[idx0]).tolist()
 		for sample in self.samples:
@@ -116,11 +131,65 @@ class Model(Store):
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
 		self.view.image_lst.reload()
 		self.view.image_lst.scrollToTop()
-
+	
+	def optimize_weights_all(self, sample_ids, steps = 20):
+		
+		idxs = [self.sample_ids.index(sample_id) for sample_id in sample_ids]
+		distance = self.distance[:,idxs][idxs]
+		weights = set() # [[w_R, w_th, w_kap, w_h, w_diam, w_axis], ...]
+		values = np.linspace(0, 1, steps).tolist()
+		for row in product(*[values for i in range(5)]):
+			w_axis = 1 - sum(row)
+			if w_axis < 0:
+				continue
+			weights.add(tuple(list(row) + [w_axis]))
+		weights = list(weights)
+		test = []
+		for w_R, w_th, w_kap, w_h, w_diam, w_axis in weights:
+			test.append(combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_axis).mean())
+		w_R, w_th, w_kap, w_h, w_diam, w_axis = weights[np.argmax(test)]
+		self.set_weights(dict(
+			Radius = w_R,
+			Tangent = w_th,
+			Curvature = w_kap,
+			Hamming = w_h,
+			Diameter = w_diam,
+			Axis = w_axis,
+		))
+	
+	def optimize_weights(self, sample_ids, steps = 20):
+		
+		idxs = [self.sample_ids.index(sample_id) for sample_id in sample_ids]
+		distance = self.distance[:,idxs][idxs]
+		weights = set() # [[w_h, w_diam, w_axis], ...]
+		values = np.linspace(0, 1, steps + 2)[1:-1].tolist()
+		for row in product(*[values for i in range(2)]):
+			w_axis = 1 - sum(row)
+			if w_axis < values[0]:
+				continue
+			weights.add(tuple(list(row) + [w_axis]))
+		weights = list(weights)
+		test = []
+		for w_h, w_diam, w_axis in weights:
+			test.append(combine_dists(distance, 0, 0, 0, w_h, w_diam, w_axis).mean())
+		test = np.array(test)
+		w_h, w_diam, w_axis = weights[np.argmax(test)]
+		self.set_weights(dict(
+			Radius = 0,
+			Tangent = 0,
+			Curvature = 0,
+			Hamming = w_h,
+			Diameter = w_diam,
+			Axis = w_axis,
+		))
+	
 	def populate_distmax_ordering(self):
 		
-		pca_scores = self.get_pca()
-		ordering = get_distmax_ordering(pca_scores)
+		D = self.get_distance()
+		pca_scores = self.get_pca(D)
+		if pca_scores is None:
+			return
+		ordering = get_distmax_ordering(pca_scores, D)
 		ordering = dict([(self.sample_ids[idx], ordering[idx]) for idx in ordering])  # {sample_id: row, ...}
 		self.distmax_ordering = {}  # {row: sample_id, ...}
 		for sample_id in ordering:
@@ -172,16 +241,20 @@ class Model(Store):
 		sample_id = self.distmax_ordering[row]
 		self.load_distance(sample_id)
 	
-	def split_cluster(self, selected_sample):
+	def split_cluster(self, supercluster = None):
 		
-		supercluster = selected_sample.cluster
 		if supercluster:
 			sample_idxs = [self.sample_ids.index(sample.id) for sample in self.samples if sample.cluster == supercluster]
 		else:
 			sample_idxs = [self.sample_ids.index(sample.id) for sample in self.samples]
 		
+		if len(sample_idxs) < 3:
+			return
+		
 		D = self.get_distance()[:,sample_idxs][sample_idxs]
 		pca_scores = self.get_pca(D)
+		if pca_scores is None:
+			return
 		
 		sample_labels = get_sample_labels(pca_scores)
 		sample_labels = dict([(self.sample_ids[sample_idxs[idx]], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
@@ -211,12 +284,18 @@ class Model(Store):
 			self.cluster_weights[cluster] = {}
 			for name in self.weights:
 				self.cluster_weights[cluster][name] = self.weights[name]
-		
-		self.populate_clusters(selected_sample)
 	
-	def join_cluster(self, selected_sample):
+	def split_all_clusters(self):
 		
-		cluster = selected_sample.cluster
+		clusters = self.get_samples_clusters()
+		if not clusters:
+			self.split_cluster(None)
+		else:
+			for cluster in clusters:
+				self.split_cluster(cluster)
+	
+	def join_cluster(self, cluster):
+		
 		if not cluster:
 			return
 		
@@ -232,7 +311,58 @@ class Model(Store):
 		for sample in self.samples:
 			if sample.cluster and (sample.cluster.split(".")[:-1] == supercluster):
 				sample.cluster = cluster
-		self.populate_clusters(selected_sample)
+	
+	def manual_cluster(self, samples):
+		
+		manual_n = 0
+		for sample in self.samples:
+			if sample.cluster is None:
+				continue
+			cluster = sample.cluster.split(".")
+			for val in cluster:
+				if val.startswith("manual_"):
+					manual_n = max(manual_n, int(val.split("_")[1]))
+		manual_n += 1
+		
+		clusters = self.get_samples_clusters(samples)
+		label = "manual_%d" % (manual_n)
+		if clusters:
+			supercluster = clusters[0].split(".")
+			for cluster in clusters:
+				overlap = []
+				for i, val in enumerate(cluster.split(".")):
+					if (i < len(supercluster)) and (val == supercluster[i]):
+						overlap.append(val)
+					else:
+						break
+				if len(overlap) < len(supercluster):
+					supercluster = overlap.copy()
+				if not supercluster:
+					break
+			if supercluster:
+				label = "%s.manual_%d" % (".".join(supercluster), manual_n)
+		
+		for sample in samples:
+			sample.cluster = label
+			sample.leaf = None
+		
+		new_clusters = [label]
+		
+		label = "manual_%d" % (manual_n + 1)
+		new_clusters.append(label)
+		for sample in self.samples:
+			if sample.cluster is None:
+				sample.cluster = label
+		
+		for cluster in new_clusters:
+			self.cluster_weights[cluster] = {
+				"Radius": 0,
+				"Tangent": 0,
+				"Curvature": 0,
+				"Hamming": 1/3,
+				"Diameter": 1/3,
+				"Axis": 1/3,
+			}
 	
 	def update_leaves(self):
 		
@@ -243,13 +373,18 @@ class Model(Store):
 				clusters[sample.cluster].append(self.sample_ids.index(sample.id))
 		if not clusters:
 			pca_scores = self.get_pca(D)
+			if pca_scores is None:
+				return
 			sample_labels = get_sample_labels(pca_scores)
 			sample_labels = dict([(self.sample_ids[idx], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
 		else:
 			sample_labels = {}
 			for cluster in clusters:
 				pca_scores = self.get_pca(D[:,clusters[cluster]][clusters[cluster]])
-				clu_sample_labels = get_sample_labels(pca_scores)
+				if pca_scores is None:
+					clu_sample_labels = dict([(idx, label) for idx, label in enumerate(["1"] * len(clusters[cluster]))])
+				else:
+					clu_sample_labels = get_sample_labels(pca_scores)
 				for idx in clu_sample_labels:
 					sample_labels[self.sample_ids[clusters[cluster][idx]]] = clu_sample_labels[idx]
 		for sample in self.samples:
@@ -343,6 +478,10 @@ class Model(Store):
 			if sample.id in self.sample_data:
 				sample.from_dict(self.sample_data[sample.id])
 		self.populate_clusters()
+	
+	def save_clusters_pdf(self, path):
+		
+		pass  # TODO implement
 	
 	def on_selected(self):
 		

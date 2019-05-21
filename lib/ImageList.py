@@ -1,6 +1,7 @@
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
 from natsort import (natsorted)
+import os
 
 class ImageDelegate(QtWidgets.QStyledItemDelegate):
 	
@@ -32,7 +33,9 @@ class IconThread(QtCore.QThread):
 	
 	def run(self):
 		
-		path = self.parent.model.images.get_thumbnail(self.label, size = self.icon_size, root_folder = self.local_folder)
+		path = os.path.join("data", "thumbnails", "%s.jpg" % (self.label.filename.split(".")[0]))
+		if not os.path.isfile(path):
+			path = self.parent.model.images.get_thumbnail(self.label, size = self.icon_size, root_folder = self.local_folder)
 		self.parent.on_icon_thread(self.index, path)
 
 class ListModel(QtCore.QAbstractListModel):

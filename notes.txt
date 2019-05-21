@@ -4,9 +4,10 @@ GUI:
 
 export clusters to pdf
 
+save to file
 
-save clusters to deposit
 
-zobrazovat thumbnails v niekolkych standardnych skalach
+link to Deposit
 
-show dendrogram with prototypes
+prototypes (e.g. in a dendrogram?)
+

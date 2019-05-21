@@ -1,6 +1,7 @@
 from lib.Model import (Model)
 from lib.ImageList import (ImageList)
 from lib.WeightsFrame import (WeightsFrame)
+from lib.ClusterGroup import (ClusterGroup)
 from lib.FooterFrame import (FooterFrame)
 from lib.ToolBar import (ToolBar)
 from lib.StatusBar import (StatusBar)
@@ -12,8 +13,9 @@ import os
 class View(QtWidgets.QMainWindow):
 	
 	MODE_IDS = 100
-	MODE_DISTANCE = 200
-	MODE_CLUSTER = 300
+	MODE_DISTANCE_MIN = 200
+	MODE_DISTANCE_MAX = 300
+	MODE_CLUSTER = 400
 	
 	def __init__(self):
 		
@@ -43,14 +45,14 @@ class View(QtWidgets.QMainWindow):
 		self.image_lst = ImageList(self)
 		self.footer_frame = FooterFrame(self)
 		self.weights_frame = WeightsFrame(self)
+		self.cluster_group = ClusterGroup(self)
 		self.toolbar = ToolBar(self)
 		self.statusbar = StatusBar(self)
 		
 		self.samples_button = Button("Sort by Sample IDs", self.on_samples)
-		self.distance_button = Button("Sort by Distance", self.on_distance)
-		self.cluster_button = Button("Sort by Cluster", self.on_cluster)
-		self.split_cluster_button = Button("Split Cluster", self.on_split_cluster)
-		self.join_cluster_button = Button("Join Cluster", self.on_join_cluster)
+		self.distance_max_button = Button("Sort by Max Distance", self.on_distance_max)
+		self.distance_min_button = Button("Sort by Min Distance", self.on_distance_min)
+		self.cluster_button = Button("Sort by Clustering", self.on_cluster)
 		
 		self.left_frame = QtWidgets.QFrame(self)
 		self.left_frame.setLayout(QtWidgets.QVBoxLayout())
@@ -64,11 +66,12 @@ class View(QtWidgets.QMainWindow):
 		self.splitter.addWidget(self.right_frame)
 		
 		self.left_frame.layout().addWidget(self.weights_frame)
+		self.left_frame.layout().addWidget(self.cluster_group)
 		self.left_frame.layout().addWidget(self.samples_button)
-		self.left_frame.layout().addWidget(self.distance_button)
+		self.left_frame.layout().addWidget(self.distance_max_button)
+		self.left_frame.layout().addWidget(self.distance_min_button)
 		self.left_frame.layout().addWidget(self.cluster_button)
-		self.left_frame.layout().addWidget(self.split_cluster_button)
-		self.left_frame.layout().addWidget(self.join_cluster_button)
+		self.left_frame.layout().addWidget(self.cluster_group)
 		self.left_frame.layout().addStretch()
 		
 		self.right_frame.layout().addWidget(self.image_lst)
@@ -97,14 +100,13 @@ class View(QtWidgets.QMainWindow):
 		if not self._loaded:
 			return
 		self.weights_frame.update()
+		self.cluster_group.update()
 		self.footer_frame.update()
 		self.image_lst.update_()
 		
 		selected = self.get_selected()
 		
-		self.split_cluster_button.setEnabled(len(selected) > 0)
-		
-		self.join_cluster_button.setEnabled((len(selected) > 0) and (selected[0].has_cluster()))
+		self.distance_min_button.setEnabled((len(selected) > 0) or isinstance(self.model.samples[0].value, float))
 		
 		if selected:
 			cluster = selected[0].cluster
@@ -123,22 +125,34 @@ class View(QtWidgets.QMainWindow):
 			self.model.set_weight(name, value / 100)
 			return
 	
+	def on_optimize(self, *args):
+		
+		selected = self.image_lst.get_selected()
+		if not selected:
+			return
+		self.model.optimize_weights([sample.id for sample in selected])
+	
 	def on_samples(self, *args):
 		
 		self.mode = self.MODE_IDS
 		self.model.load_ids()
 	
-	def on_distance(self, *args):
+	def on_distance_max(self, *args):
 		
-		self.mode = self.MODE_DISTANCE
+		self.mode = self.MODE_DISTANCE_MAX
+		self.model.load_distmax()
+	
+	def on_distance_min(self, *args):
+		
 		selected = self.get_selected()
-		if selected or isinstance(self.model.samples[0].value, float):
-			if selected:
-				self.model.load_distance(selected[0].id)
-			else:
-				self.model.load_distance(self.model.samples[0].id)
+		if selected:
+			sample_id = selected[0].id
+		elif isinstance(self.model.samples[0].value, float):
+			sample_id = self.model.samples[0].id
 		else:
-			self.model.load_distmax()
+			return
+		self.mode = self.MODE_DISTANCE_MIN
+		self.model.load_distance(sample_id)
 	
 	def on_cluster(self, *args):
 		
@@ -155,7 +169,17 @@ class View(QtWidgets.QMainWindow):
 		if not selected:
 			return
 		self.mode = self.MODE_CLUSTER
-		self.model.split_cluster(selected[0])
+		clusters = set()
+		for sample in selected:
+			if sample.cluster is None:
+				continue
+			clusters.add(sample.cluster)
+		if clusters:
+			for cluster in clusters:
+				self.model.split_cluster(cluster)
+		else:
+			self.model.split_cluster()
+		self.model.populate_clusters(selected[0])
 	
 	def on_join_cluster(self, *args):
 		
@@ -163,7 +187,32 @@ class View(QtWidgets.QMainWindow):
 		if not selected:
 			return
 		self.mode = self.MODE_CLUSTER
-		self.model.join_cluster(selected[0])
+
+		clusters = set()
+		for sample in selected:
+			if sample.cluster is None:
+				continue
+			clusters.add(sample.cluster)
+		if clusters:
+			for cluster in clusters:
+				self.model.join_cluster(cluster)
+		else:
+			self.model.join_cluster()
+		self.model.populate_clusters(selected[0])
+	
+	def on_manual_cluster(self, *args):
+		
+		selected = self.image_lst.get_selected()
+		if not selected:
+			return
+		self.model.manual_cluster(selected)
+		self.model.populate_clusters(selected[0])
+	
+	def on_split_all_clusters(self, *args):
+		
+		self.mode = self.MODE_CLUSTER
+		self.model.split_all_clusters()
+		self.model.populate_clusters()
 	
 	def on_reload(self, *args):
 		
@@ -171,8 +220,10 @@ class View(QtWidgets.QMainWindow):
 			return
 		if self.mode == self.MODE_IDS:
 			self.on_samples()
-		elif self.mode == self.MODE_DISTANCE:
-			self.on_distance()
+		elif self.mode == self.MODE_DISTANCE_MIN:
+			self.on_distance_min()
+		elif self.mode == self.MODE_DISTANCE_MAX:
+			self.on_distance_max()
 		elif self.mode == self.MODE_CLUSTER:
 			self.on_cluster()
 	

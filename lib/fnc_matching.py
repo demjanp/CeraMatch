@@ -6,7 +6,6 @@ from itertools import combinations
 from collections import defaultdict
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist, pdist
-from scipy.spatial.distance import squareform
 from scipy.cluster.hierarchy import linkage, fcluster
 
 def profile_length(profile):
@@ -127,27 +126,38 @@ def axis_dist(axis1, axis2, axis_step):
 	axis1, xd1, yd1, length1 = axis1
 	axis2, xd2, yd2, length2 = axis2
 	
+	break_len = 0
+	
 	if length1 < length2:
+		axis_shorter = axis1
+		axis_longer = axis2
 		if xd1 is not None:
 			length = length2 - length1
 			break1 = np.linspace(0, length * axis_step, int(round(length / axis_step)))
 			break1 = np.vstack((break1*xd1, break1*yd1)).T + axis1[-1]
-			axis1 = np.vstack((axis1, break1))
+			axis_shorter = np.vstack((axis_shorter, break1))
+			break_len = break1.shape[0]
 	
 	elif length2 < length1:
+		axis_shorter = axis2
+		axis_longer = axis1
 		if xd2 is not None:
 			length = length1 - length2
 			break2 = np.linspace(0, length * axis_step, int(round(length / axis_step)))
 			break2 = np.vstack((break2*xd2, break2*yd2)).T + axis2[-1]
-			axis2 = np.vstack((axis2, break2))
+			axis_shorter = np.vstack((axis2, break2))
+			break_len = break2.shape[0]
 	
-	len_norm = max(axis1.shape[0], axis2.shape[0])
-	d_norm = np.abs(np.linspace(0, np.sqrt((axis1[-1]**2).sum()), len_norm) + np.linspace(0, np.sqrt((axis2[-1]**2).sum()), len_norm)).mean()
-	if axis1.shape[0] > axis2.shape[0]:
-		d = cdist(axis1, axis2).min(axis = 1).mean()
+	d_norm = np.abs(np.linspace(0, np.sqrt((axis_longer[-1]**2).sum()), axis_shorter.shape[0]) + np.linspace(0, np.sqrt((axis_shorter[-1]**2).sum()), axis_shorter.shape[0]))
+	if break_len > 0:
+		w = np.hstack((np.ones(axis_shorter.shape[0] - break_len), np.linspace(1, 0, break_len)))
+		w = w / w.sum()
+		d_norm = (d_norm * w).sum()
 	else:
-		d = cdist(axis1, axis2).min(axis = 0).mean()
-	return d / d_norm
+		d_norm = d_norm.mean()
+		w = np.ones(axis_shorter.shape[0]) / axis_shorter.shape[0]
+	d = cdist(axis_shorter, axis_longer).min(axis = 1)
+	return (d * w).sum() / d_norm
 
 def arc_length(profile):
 	
@@ -234,9 +244,6 @@ def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents,
 		profile1, _, radius1, _, _ = profiles[sample_ids[i]]
 		profile2, _, radius2, _, _ = profiles[sample_ids[j]]
 		
-		axis1 = axes[sample_ids[i]] # [axis, xd, yd, length]
-		axis2 = axes[sample_ids[j]]
-		
 		shifts1 = profile1[(profile1[:,1] == profile1[:,1].min())][:,0]
 		shifts2 = profile2[(profile2[:,1] == profile2[:,1].min())][:,0]
 		
@@ -255,6 +262,10 @@ def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents,
 				R_dist = min(R_dist, radius_dist(profile1 - [shift1, 0] + [radius1, 0], profile2 - [shift2, 0] + [radius2, 0]))
 		
 		diam_dist = diameter_dist(radius1, radius2)
+		
+		axis1 = axes[sample_ids[i]] # [axis, xd, yd, length]
+		axis2 = axes[sample_ids[j]]
+		
 		ax_dist = axis_dist(axis1, axis2, axis_step)
 		
 		# shape distances
@@ -319,10 +330,10 @@ def calc_distances(profiles):
 		
 		# calculate axis
 		axis = profile_axis(profile, params, step = axis_step, inner_weight = 0.5)
-		if bottom:
-			mask = (axis[:,1] < profile[:,1].max() - thickness)
-			if mask.any():
-				axis = axis[mask]
+#		if bottom:
+#			mask = (axis[:,1] < profile[:,1].max() - thickness)
+#			if mask.any():
+#				axis = axis[mask]
 		length = np.sqrt((axis[-1]**2).sum())
 		xd, yd = None, None
 		if params:
@@ -359,14 +370,15 @@ def combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_axis):
 	combined = np.ones(distance.shape[:2])
 	
 	w_sum = sum([w_R, w_th, w_kap, w_h, w_diam, w_axis])
-	w_R, w_th, w_kap, w_h, w_diam, w_axis = [w / w_sum for w in [w_R, w_th, w_kap, w_h, w_diam, w_axis]]
+	if w_sum == 0:
+		w_R, w_th, w_kap, w_h, w_diam, w_axis = [1 / 6] * 6
+	else:
+		w_R, w_th, w_kap, w_h, w_diam, w_axis = [w / w_sum for w in [w_R, w_th, w_kap, w_h, w_diam, w_axis]]
 	
 	dists = [None] * 6
 	for idx in range(6):
 		dists[idx] = distance[:,:,idx]
 	R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist = dists
-	
-	axis_dist[axis_dist == -1] = axis_dist[axis_dist > -1].mean()
 	
 	combined = R_dist * w_R + th_dist * w_th + kap_dist * w_kap + h_dist * w_h + diam_dist * w_diam + axis_dist * w_axis
 	
@@ -375,15 +387,13 @@ def combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_axis):
 	
 	return combined
 
-def get_distmax_ordering(distance):
+def get_distmax_ordering(pca_scores, D):
 	# orders samples so that the the next one has the highest possible distance to the most similar of the previous samples
 	# (ensures that the samples at the beginning of the sequence are the most diverse)
 	# returns {sample_idx: order, ...}
 	
-	D = squareform(pdist(distance))
-	
 	# start with the profile most disstant from the centroid of the assemblage
-	idx0 = np.argmax(((distance - distance.mean(axis = 0))**2).sum(axis = 1))
+	idx0 = np.argmax(((pca_scores - pca_scores.mean(axis = 0))**2).sum(axis = 1))
 	idxs_done = [idx0]
 	data = {} # {sample_idx: order, ...}
 	i = 0

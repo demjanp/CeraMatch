@@ -20,6 +20,12 @@ class ToolBar(object):
 		self.action_save = QtWidgets.QAction(QtGui.QIcon("res\save.svg"), "Save", self.view)
 		self.action_save.triggered.connect(self.on_save)
 		self.toolbar.addAction(self.action_save)
+		
+		self.toolbar.addSeparator()
+		
+		self.action_save_pdf = QtWidgets.QAction(QtGui.QIcon("res\capture_pdf.svg"), "Save as PDF", self.view)
+		self.action_save_pdf.triggered.connect(self.on_save_pdf)
+		self.toolbar.addAction(self.action_save_pdf)
 	
 	def on_load(self, *args):
 		
@@ -34,5 +40,10 @@ class ToolBar(object):
 		if path:
 			self.last_dir = os.path.split(path)[0]
 			self.model.save_clusters(path)
-
-
+	
+	def on_save_pdf(self, *args):
+		
+		path, _ = QtWidgets.QFileDialog.getSaveFileName(None, caption = "Save Clustering as PDF", filter = "(*.pdf)")
+		if path:
+			self.last_dir = os.path.split(path)[0]
+			self.model.save_clusters_pdf(path)

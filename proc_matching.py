@@ -60,6 +60,9 @@ if __name__ == '__main__':
 	distance[:,:,1] /= avg_th
 	distance[:,:,2] /= avg_kap
 	
+	# normalize axis distance by max value
+	distance[:,:,5] /= distance[:,:,5].max()
+	
 	np.save(fmatching, distance)
 	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, land_dist]
 

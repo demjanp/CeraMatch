@@ -31,6 +31,6 @@ class FooterFrame(QtWidgets.QFrame):
 	
 	def update(self):
 		
-		browse_enabled = (self.view.mode == self.view.MODE_DISTANCE)
+		browse_enabled = (self.view.mode == self.view.MODE_DISTANCE_MIN)
 		self.prev_button.setEnabled(browse_enabled)
 		self.next_button.setEnabled(browse_enabled)

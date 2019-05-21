@@ -8,4 +8,5 @@ class Button(QtWidgets.QPushButton):
 		QtWidgets.QPushButton.__init__(self, caption)
 		
 		self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+		self.setFixedWidth(200)
 		self.clicked.connect(callback)
