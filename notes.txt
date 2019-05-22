@@ -2,12 +2,7 @@
 
 GUI:
 
-export clusters to pdf
-
-save to file
-
-
-link to Deposit
+interface with Deposit
 
 prototypes (e.g. in a dendrogram?)
 

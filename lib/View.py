@@ -214,6 +214,20 @@ class View(QtWidgets.QMainWindow):
 		self.model.split_all_clusters()
 		self.model.populate_clusters()
 	
+	def on_set_outlier(self, *args):
+		
+		selected = self.image_lst.get_selected()
+		if not selected:
+			return
+		self.model.set_outlier(selected)
+	
+	def on_set_central(self, *args):
+		
+		selected = self.image_lst.get_selected()
+		if not selected:
+			return
+		self.model.set_central(selected)
+	
 	def on_reload(self, *args):
 		
 		if self.mode is None:

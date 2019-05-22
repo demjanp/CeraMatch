@@ -11,6 +11,9 @@ class Sample(object):
 		self.index = None
 		self.cluster = None
 		self.leaf = None
+		
+		self.outlier = False
+		self.central = False
 
 	def has_cluster(self):
 		
@@ -25,6 +28,8 @@ class Sample(object):
 			value = self.value,
 			cluster = self.cluster,
 			leaf = self.leaf,
+			outlier = self.outlier,
+			central = self.central,
 		)
 	
 	def from_dict(self, data):
@@ -33,3 +38,5 @@ class Sample(object):
 		self.value = data["value"]
 		self.cluster = data["cluster"]
 		self.leaf = data["leaf"]
+		self.outlier = data["outlier"]
+		self.central = data["central"]

@@ -1,6 +1,7 @@
 from deposit import (Store, Commander, Broadcasts)
 
 from lib.fnc_matching import *
+from lib.fnc_drawing import *
 from lib.Sample import Sample
 
 from PySide2 import (QtCore, QtGui)
@@ -171,7 +172,7 @@ class Model(Store):
 		weights = list(weights)
 		test = []
 		for w_h, w_diam, w_axis in weights:
-			test.append(combine_dists(distance, 0, 0, 0, w_h, w_diam, w_axis).mean())
+			test.append(combine_dists(distance, 0, 0, 0, w_h, w_diam, w_axis).std())
 		test = np.array(test)
 		w_h, w_diam, w_axis = weights[np.argmax(test)]
 		self.set_weights(dict(
@@ -399,6 +400,20 @@ class Model(Store):
 			self.samples[row].row = row
 		self.view.image_lst.reload()
 	
+	def set_outlier(self, samples):
+		
+		for sample in samples:
+			sample.outlier = not sample.outlier
+			if sample.outlier:
+				sample.central = False
+	
+	def set_central(self, samples):
+		
+		for sample in samples:
+			sample.central = not sample.central
+			if sample.central:
+				sample.outlier = False
+	
 	def populate_clusters(self, selected_sample = None):
 		
 		self.update_leaves()
@@ -481,7 +496,7 @@ class Model(Store):
 	
 	def save_clusters_pdf(self, path):
 		
-		pass  # TODO implement
+		save_clusters_as_pdf(path, self.samples)
 	
 	def on_selected(self):
 		
