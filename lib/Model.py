@@ -3,6 +3,7 @@ from deposit import (Store, Commander, Broadcasts)
 from lib.fnc_matching import *
 from lib.fnc_drawing import *
 from lib.Sample import Sample
+import lib
 
 from PySide2 import (QtCore, QtGui)
 
@@ -40,9 +41,11 @@ class Model(Store):
 		
 		Store.__init__(self, parent = self.view)
 		
-		self.load(DB_URL)
+		root_path = os.path.split(os.path.dirname(lib.__file__))[0]
+		
+		self.load(os.path.join(root_path, DB_URL))
 
-		with open(FSAMPLE_IDS, "r") as f:
+		with open(os.path.join(root_path, FSAMPLE_IDS), "r") as f:
 			self.sample_ids = json.load(f)
 		
 		row = 0
@@ -54,7 +57,7 @@ class Model(Store):
 			self.samples.append(Sample(sample_id, obj.descriptors["Reconstruction"].label, sample_id, sample_id, row))
 			row += 1
 		
-		self.distance = np.load(FMATCHING) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist]
+		self.distance = np.load(os.path.join(root_path, FMATCHING)) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist]
 		
 	def set_weight(self, name, value):
 		
