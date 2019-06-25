@@ -99,6 +99,10 @@ class View(QtWidgets.QMainWindow):
 		
 		if not self._loaded:
 			return
+		
+		if not self.model.samples:
+			return
+		
 		self.weights_frame.update()
 		self.cluster_group.update()
 		self.footer_frame.update()
@@ -111,13 +115,10 @@ class View(QtWidgets.QMainWindow):
 		if selected:
 			cluster = selected[0].cluster
 			if cluster:
-				text = "Label: %s, Cluster: %s, Sample ID: %s" % (selected[0].value, cluster, selected[0].id)
+				text = "Cluster: %s, Label: %s, Sample ID: %s" % (cluster, selected[0].value, selected[0].id)
 			else:
 				text = "Label: %s, Sample ID: %s" % (selected[0].value, selected[0].id)
 			self.statusbar.message(text)
-			
-			if cluster in self.model.cluster_weights:
-				self.model.set_weights(self.model.cluster_weights[cluster])
 	
 	def on_slider(self, name, value):
 		
@@ -125,12 +126,14 @@ class View(QtWidgets.QMainWindow):
 			self.model.set_weight(name, value / 100)
 			return
 	
-	def on_optimize(self, *args):
+	def on_load_weights(self, *args):
 		
 		selected = self.image_lst.get_selected()
 		if not selected:
 			return
-		self.model.optimize_weights([sample.id for sample in selected])
+		cluster = selected[0].cluster
+		if cluster in self.model.cluster_weights:
+			self.model.set_weights(self.model.cluster_weights[cluster])
 	
 	def on_samples(self, *args):
 		
@@ -227,6 +230,12 @@ class View(QtWidgets.QMainWindow):
 		if not selected:
 			return
 		self.model.set_central(selected)
+	
+	def on_clear_clusters(self, *args):
+		
+		self.model.clear_clusters()
+		self.model.load_ids()
+		self.model.sort_by_leaf()
 	
 	def on_reload(self, *args):
 		

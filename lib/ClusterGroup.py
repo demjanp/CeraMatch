@@ -20,6 +20,7 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		self.split_all_button = Button("Split All", self.view.on_split_all_clusters)
 		self.outlier_button = Button("Set Outlier", self.view.on_set_outlier, icon = "reject.svg")
 		self.central_button = Button("Set Central", self.view.on_set_central, icon = "accept.svg")
+		self.clear_button = Button("Clear All", self.view.on_clear_clusters)
 		
 		self.layout().addWidget(self.split_button)
 		self.layout().addWidget(self.join_button)
@@ -27,6 +28,7 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		self.layout().addWidget(self.split_all_button)
 		self.layout().addWidget(self.outlier_button)
 		self.layout().addWidget(self.central_button)
+		self.layout().addWidget(self.clear_button)
 	
 	def update(self):
 		
@@ -43,4 +45,6 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		self.outlier_button.setEnabled(has_cluster)
 		
 		self.central_button.setEnabled(has_cluster)
+		
+		self.clear_button.setEnabled(self.model.has_clusters())
 

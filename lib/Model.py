@@ -3,19 +3,19 @@ from deposit import (Store, Commander, Broadcasts)
 from lib.fnc_matching import *
 from lib.fnc_drawing import *
 from lib.Sample import Sample
-import lib
 
 from PySide2 import (QtCore, QtGui)
 
 from natsort import natsorted
 from itertools import product
+from pathlib import Path
 import numpy as np
 import json
 import os
 
-FSAMPLE_IDS = "data/matching_find_ids.json"
-FMATCHING = "data/matching.npy"
-DB_URL = "data\\db_typology\\kap_typology.json"
+FSAMPLE_IDS = "matching_find_ids.json"
+FMATCHING = "matching.npy"
+DB_URL = "db_typology\\kap_typology.json"
 
 class Model(Store):
 	
@@ -41,7 +41,7 @@ class Model(Store):
 		
 		Store.__init__(self, parent = self.view)
 		
-		root_path = os.path.split(os.path.dirname(lib.__file__))[0]
+		root_path = os.path.join(str(Path.home()), "AppData", "Local", "CeraMatch")
 		
 		self.load(os.path.join(root_path, DB_URL))
 
@@ -298,6 +298,12 @@ class Model(Store):
 			for cluster in clusters:
 				self.split_cluster(cluster)
 	
+	def clear_clusters(self):
+		
+		for sample in self.samples:
+			sample.cluster = None
+			sample.leaf = None
+	
 	def join_cluster(self, cluster):
 		
 		if not cluster:
@@ -422,7 +428,7 @@ class Model(Store):
 		self.update_leaves()
 		cluster_last = None
 		ci = True
-		colors = [QtGui.QColor(210, 210, 210, 255), QtGui.QColor(128, 128, 128, 255)]
+		colors = [QtGui.QColor(253, 231, 37, 255), QtGui.QColor(68, 1, 84, 255)]
 		self.samples = natsorted(self.samples, key = lambda sample: [sample.cluster, sample.leaf])
 		for row in range(len(self.samples)):
 			cluster = self.samples[row].cluster

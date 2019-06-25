@@ -39,8 +39,8 @@ class WeightsFrame(QtWidgets.QFrame):
 			self.slider_frame.layout().addWidget(QtWidgets.QLabel(name), row, 0)
 			self.slider_frame.layout().addWidget(self.sliders[name], row, 1)
 		
-		self.optimize_button = Button("Optimize", self.view.on_optimize)
-		self.group.layout().addWidget(self.optimize_button)
+		self.load_button = Button("Load", self.view.on_load_weights)
+		self.group.layout().addWidget(self.load_button)
 		
 		for name in self.model.weights:
 			self.set_slider(name, int(round(self.model.weights[name] * 100)))
@@ -52,7 +52,15 @@ class WeightsFrame(QtWidgets.QFrame):
 	
 	def update(self):
 		
-		self.optimize_button.setEnabled(len(self.view.get_selected()) > 1)
+		load_enabled = False
+		cluster = None
+		selected = self.view.get_selected()
+		if selected:
+			cluster = selected[0].cluster
+		if cluster:
+			if list(self.model.cluster_weights[cluster].items()) != list(self.model.weights.items()):
+				load_enabled = True
+		self.load_button.setEnabled(load_enabled)
 
 	def reload(self):
 		
