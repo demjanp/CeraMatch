@@ -31,9 +31,9 @@ class Model(Store):
 			"Radius": 0,
 			"Tangent": 0,
 			"Curvature": 0,
-			"Hamming": 0.10,
-			"Diameter": 0.30,
-			"Axis": 0.60,
+			"Hamming": 0.0,
+			"Diameter": 0.20,
+			"Axis": 0.80,
 		}
 #		for name in self.weights:
 #			self.weights[name] = 1/len(self.weights)
@@ -118,8 +118,8 @@ class Model(Store):
 			sample.value = sample.id
 			sample.label = sample.id
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
-		self.view.image_lst.reload()
-		self.view.image_lst.scrollToTop()
+		self.view.image_view.reload()
+		self.view.image_view.scrollToTop()
 	
 	def load_distance(self, sample_id):
 		
@@ -133,8 +133,8 @@ class Model(Store):
 			sample.value = d
 			sample.label = str(round(d, 2))
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
-		self.view.image_lst.reload()
-		self.view.image_lst.scrollToTop()
+		self.view.image_view.reload()
+		self.view.image_view.scrollToTop()
 	
 	def optimize_weights_all(self, sample_ids, steps = 20):
 		
@@ -216,8 +216,8 @@ class Model(Store):
 			sample.value = sample.id
 			sample.label = sample.id
 		self.samples = sorted(self.samples, key = lambda sample: sample.row)
-		self.view.image_lst.reload()
-		self.view.image_lst.scrollToTop()
+		self.view.image_view.reload()
+		self.view.image_view.scrollToTop()
 	
 	def browse_distmax(self, direction):
 		
@@ -407,7 +407,7 @@ class Model(Store):
 		self.samples = natsorted(self.samples, key = lambda sample: sample.leaf)
 		for row in range(len(self.samples)):
 			self.samples[row].row = row
-		self.view.image_lst.reload()
+		self.view.image_view.reload()
 	
 	def set_outlier(self, samples):
 		
@@ -428,22 +428,38 @@ class Model(Store):
 		self.update_leaves()
 		cluster_last = None
 		ci = True
-		colors = [QtGui.QColor(253, 231, 37, 255), QtGui.QColor(68, 1, 84, 255)]
 		self.samples = natsorted(self.samples, key = lambda sample: [sample.cluster, sample.leaf])
+		levels_all = set([])
 		for row in range(len(self.samples)):
 			cluster = self.samples[row].cluster
 			if not cluster:
 				return
 			self.samples[row].row = row
 			self.samples[row].value = self.samples[row].leaf
-			if cluster != cluster_last:
-				ci = not ci
-				cluster_last = cluster
-			self.samples[row].label = colors[int(ci)]
-		self.view.image_lst.reload()
+			levels = list(range(1, len(cluster.split(".")) + 1))
+			levels_all.update(set(levels))
+			self.samples[row].label = dict([(level, None) for level in levels])  # {clustering_level: color, ...}
+		
+		colors = [QtGui.QColor(253, 231, 37, 255), QtGui.QColor(68, 1, 84, 255)]
+		levels_all = natsorted(list(levels_all))
+		for level in levels_all:
+			cluster_last = None
+			ci = True
+			for row in range(len(self.samples)):
+				if not isinstance(self.samples[row].label, dict):
+					continue
+				if level not in self.samples[row].label:
+					continue
+				cluster = ".".join(self.samples[row].cluster.split(".")[:level])
+				if cluster != cluster_last:
+					ci = not ci
+					cluster_last = cluster
+				self.samples[row].label[level] = colors[ci]
+		
+		self.view.image_view.reload()
 		if selected_sample is not None:
-			self.view.image_lst.scrollTo(selected_sample.index)
-			self.view.image_lst.set_selected([selected_sample.id])
+			self.view.image_view.scrollTo(selected_sample.index)
+			self.view.image_view.set_selected([selected_sample.id])
 	
 	def has_clusters(self):
 		
@@ -451,6 +467,14 @@ class Model(Store):
 			if sample.has_cluster():
 				return True
 		return False
+	
+	def max_clustering_level(self):
+		
+		level = 1
+		for sample in self.samples:
+			if sample.cluster:
+				level = max(level, len(sample.cluster.split(".")))
+		return level
 	
 	def set_datasource(self, data_source):
 		

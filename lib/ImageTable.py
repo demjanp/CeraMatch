@@ -3,7 +3,7 @@ from lib.IconThread import IconThread
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
 
-class ListModel(QtCore.QAbstractListModel):
+class TableModel(QtCore.QAbstractTableModel):
 	
 	icon_loaded = QtCore.Signal(QtCore.QModelIndex)
 	
@@ -15,9 +15,9 @@ class ListModel(QtCore.QAbstractListModel):
 		self.icons = [] # [QIcon or None, ...]; for each image
 		self.empty_icon = None
 		self.proxy_model = None
-		self.threads = {} # {row: IconThread, ...}
+		self.threads = {} # {column: IconThread, ...}
 		
-		QtCore.QAbstractListModel.__init__(self)
+		QtCore.QAbstractTableModel.__init__(self)
 		
 		pixmap = QtGui.QPixmap(self.icon_size, self.icon_size)
 		pixmap.fill()
@@ -30,12 +30,16 @@ class ListModel(QtCore.QAbstractListModel):
 	
 	def stop_threads(self):
 		
-		for row in self.threads:
-			self.threads[row].terminate()
-			self.threads[row].wait()
+		for column in self.threads:
+			self.threads[column].terminate()
+			self.threads[column].wait()
 		self.threads = {}
 	
 	def rowCount(self, parent):
+		
+		return self.model.max_clustering_level()
+	
+	def columnCount(self, parent):
 		
 		return len(self.model.samples)
 	
@@ -46,25 +50,27 @@ class ListModel(QtCore.QAbstractListModel):
 	def data(self, index, role):
 		
 		if role == QtCore.Qt.DisplayRole:
-			label = self.model.samples[index.row()].label
-			if isinstance(label, dict):
-				return None
-			return label
+			return ""
 		
 		if role == QtCore.Qt.BackgroundRole:
-			label = self.model.samples[index.row()].label
-			if isinstance(label, dict) and (1 in label):
-				return label[1]
+			label = self.model.samples[index.column()].label
+			level = index.row() + 1
+			if isinstance(label, dict) and (level in label): # label = {clustering_level: color, ...}
+				return label[level]
 			return QtGui.QColor(QtCore.Qt.white)
 		
 		if role == QtCore.Qt.DecorationRole:
-			icon = self.icons[index.row()]
+			level = index.row() + 1
+			label = self.model.samples[index.column()].label
+			icon = None
+			if isinstance(label, dict) and (level in label):
+				icon = self.icons[index.column()]
 			if icon is None:
 				return self.empty_icon
 			return icon
 		
 		if role == QtCore.Qt.UserRole:
-			item = self.model.samples[index.row()]
+			item = self.model.samples[index.column()]
 			item.index = index
 			return item
 			
@@ -74,7 +80,7 @@ class ListModel(QtCore.QAbstractListModel):
 		
 		if not path is None:
 			
-			self.icons[index.row()] = QtGui.QIcon(path)
+			self.icons[index.column()] = QtGui.QIcon(path)
 			self.icon_loaded.emit(index)
 	
 	def on_paint(self, index):
@@ -82,39 +88,39 @@ class ListModel(QtCore.QAbstractListModel):
 		if index is None:
 			return
 		
-		row = index.row()
-		if (self.icons[row] is None) and (not row in self.threads):
-			self.threads[row] = IconThread(self, index, self.icon_size)
-			self.threads[row].start()
+		column = index.column()
+		if (self.icons[column] is None) and (not column in self.threads):
+			self.threads[column] = IconThread(self, index, self.icon_size)
+			self.threads[column].start()
 
-class ImageList(QtWidgets.QListView):
+
+class ImageTable(QtWidgets.QTableView):
 	
 	def __init__(self, view, icon_size = 256):
 		
 		self.view = view
 		self.model = view.model
 		self.icon_size = icon_size
+		self.zoomed_icon_size = icon_size
 		self.list_model = None
 		self.index_lookup = {} # {sample_id: index, ...}
 		
-		QtWidgets.QListView.__init__(self, view)
+		QtWidgets.QTableView.__init__(self, view)
 		
 		self.set_up()
 		
 	def set_up(self):
 		
-		self.list_model = ListModel(self.view, self.icon_size)
+		self.list_model = TableModel(self.view, self.icon_size)
 		
 		self.setItemDelegate(ImageDelegate(self))
-		
-		self.setViewMode(QtWidgets.QListView.IconMode)
-		self.setUniformItemSizes(True)
 		self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
-		self.setResizeMode(QtWidgets.QListView.Adjust)
-		self.setWrapping(True)
-		self.setFlow(QtWidgets.QListView.LeftToRight)
-		
 		self.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+		self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+		self.verticalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
+		self.horizontalHeader().hide()
+		self.verticalHeader().hide()
+		self.set_thumbnail_size(self.zoomed_icon_size)
 		
 		self.setModel(self.list_model)
 		
@@ -125,8 +131,8 @@ class ImageList(QtWidgets.QListView):
 		self.list_model.icon_loaded.connect(self.on_icon_loaded)
 		
 		self.index_lookup = {}
-		for row in range(self.list_model.rowCount(self)):
-			index = self.list_model.index(row, 0)
+		for column in range(self.list_model.columnCount(self)):
+			index = self.list_model.index(0, column)
 			sample_id = index.data(QtCore.Qt.UserRole).id
 			self.index_lookup[sample_id] = index
 	
@@ -142,7 +148,10 @@ class ImageList(QtWidgets.QListView):
 	
 	def set_thumbnail_size(self, value):
 		
+		self.zoomed_icon_size = value
 		self.setIconSize(QtCore.QSize(value, value))
+		self.horizontalHeader().setDefaultSectionSize(value*1.1)
+		self.verticalHeader().setDefaultSectionSize(value*1.1)
 	
 	def get_selected(self):
 		# returns [Sample, ...]
@@ -170,7 +179,7 @@ class ImageList(QtWidgets.QListView):
 	
 	def selectionChanged(self, selected, deselected):
 		
-		super(ImageList, self).selectionChanged(selected, deselected)
+		super(ImageTable, self).selectionChanged(selected, deselected)
 		self.model.on_selected()
 		self.view.update()
 	

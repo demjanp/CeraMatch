@@ -1,5 +1,7 @@
 from lib.Model import (Model)
-from lib.ImageList import (ImageList)
+#from lib.ImageList import (ImageList)
+#from lib.ImageTable import (ImageTable)
+from lib.ImageView import (ImageView)  # DEBUG
 from lib.WeightsFrame import (WeightsFrame)
 from lib.ClusterGroup import (ClusterGroup)
 from lib.FooterFrame import (FooterFrame)
@@ -8,7 +10,6 @@ from lib.StatusBar import (StatusBar)
 from lib.Button import (Button)
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
-import os
 
 class View(QtWidgets.QMainWindow):
 	
@@ -42,7 +43,9 @@ class View(QtWidgets.QMainWindow):
 		
 		self.central_widget.layout().addWidget(self.splitter)
 		
-		self.image_lst = ImageList(self)
+#		self.image_lst = ImageList(self)
+#		self.image_lst = ImageTable(self)  # DEBUG
+		self.image_view = ImageView(self)
 		self.footer_frame = FooterFrame(self)
 		self.weights_frame = WeightsFrame(self)
 		self.cluster_group = ClusterGroup(self)
@@ -74,7 +77,7 @@ class View(QtWidgets.QMainWindow):
 		self.left_frame.layout().addWidget(self.cluster_group)
 		self.left_frame.layout().addStretch()
 		
-		self.right_frame.layout().addWidget(self.image_lst)
+		self.right_frame.layout().addWidget(self.image_view)
 		self.right_frame.layout().addWidget(self.footer_frame)
 		
 		self.setStatusBar(self.statusbar)
@@ -86,14 +89,14 @@ class View(QtWidgets.QMainWindow):
 		
 		self.setGeometry(100, 100, 1024, 768)
 		
-		self.footer_frame.slider_zoom.setValue(100)
-		
 		self.on_samples()
+		
+		self.footer_frame.slider_zoom.setValue(100)
 	
 	def get_selected(self):
 		# returns [[sample_id, DResource, label, value, index], ...]
 		
-		return self.image_lst.get_selected()
+		return self.image_view.get_selected()
 	
 	def update(self):
 		
@@ -106,7 +109,7 @@ class View(QtWidgets.QMainWindow):
 		self.weights_frame.update()
 		self.cluster_group.update()
 		self.footer_frame.update()
-		self.image_lst.update_()
+		self.image_view.update_()
 		
 		selected = self.get_selected()
 		
@@ -128,7 +131,7 @@ class View(QtWidgets.QMainWindow):
 	
 	def on_load_weights(self, *args):
 		
-		selected = self.image_lst.get_selected()
+		selected = self.image_view.get_selected()
 		if not selected:
 			return
 		cluster = selected[0].cluster
@@ -168,7 +171,7 @@ class View(QtWidgets.QMainWindow):
 	
 	def on_split_cluster(self, *args):
 		
-		selected = self.image_lst.get_selected()
+		selected = self.image_view.get_selected()
 		if not selected:
 			return
 		self.mode = self.MODE_CLUSTER
@@ -186,7 +189,7 @@ class View(QtWidgets.QMainWindow):
 	
 	def on_join_cluster(self, *args):
 		
-		selected = self.image_lst.get_selected()
+		selected = self.image_view.get_selected()
 		if not selected:
 			return
 		self.mode = self.MODE_CLUSTER
@@ -205,7 +208,7 @@ class View(QtWidgets.QMainWindow):
 	
 	def on_manual_cluster(self, *args):
 		
-		selected = self.image_lst.get_selected()
+		selected = self.image_view.get_selected()
 		if not selected:
 			return
 		self.model.manual_cluster(selected)
@@ -219,14 +222,14 @@ class View(QtWidgets.QMainWindow):
 	
 	def on_set_outlier(self, *args):
 		
-		selected = self.image_lst.get_selected()
+		selected = self.image_view.get_selected()
 		if not selected:
 			return
 		self.model.set_outlier(selected)
 	
 	def on_set_central(self, *args):
 		
-		selected = self.image_lst.get_selected()
+		selected = self.image_view.get_selected()
 		if not selected:
 			return
 		self.model.set_central(selected)
@@ -260,5 +263,5 @@ class View(QtWidgets.QMainWindow):
 	
 	def on_zoom(self, value):
 		
-		self.image_lst.set_thumbnail_size(value)
+		self.image_view.set_thumbnail_size(value)
 

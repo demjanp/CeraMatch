@@ -2,6 +2,7 @@
 class Sample(object):
 	
 	def __init__(self, id, resource, label, value, row):
+		# label = text label or {clustering_level: color, ...}
 		
 		self.id = id
 		self.resource = resource
