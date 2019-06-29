@@ -31,7 +31,8 @@ class View(QtWidgets.QMainWindow):
 		
 		self.setWindowTitle("CeraMatch")
 		self.setWindowIcon(QtGui.QIcon("res\cm_icon.svg"))
-		self.setStyleSheet("QWidget { font-size: 11pt;} QPushButton {font-size: 11pt; padding: 5px; min-width: 100px;}")
+#		self.setStyleSheet("QWidget { font-size: 11pt;} QPushButton {font-size: 11pt; padding: 5px; min-width: 100px;}")
+		self.setStyleSheet("QPushButton {padding: 5px; min-width: 100px;}")
 		
 		self.central_widget = QtWidgets.QWidget(self)
 		self.central_widget.setLayout(QtWidgets.QVBoxLayout())

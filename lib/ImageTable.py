@@ -53,23 +53,27 @@ class TableModel(QtCore.QAbstractTableModel):
 		
 		if role == QtCore.Qt.DisplayRole:
 			return ""
-		
+			
 		if role == QtCore.Qt.BackgroundRole:
 			label = self.model.samples[index.column()].label
 			level = index.row() + 1
 			if isinstance(label, dict) and (level in label): # label = {clustering_level: color, ...}
 				return label[level]
 			return QtGui.QColor(QtCore.Qt.white)
-		
+			
 		if role == QtCore.Qt.DecorationRole:
-			return self.icons[index.column()]
-		
+			label = self.model.samples[index.column()].label
+			level = index.row() + 1
+			if isinstance(label, dict) and (level in label):
+				return self.icons[index.column()]
+			return self.empty_icon
+			
 		if role == QtCore.Qt.ToolTipRole:
 			path = self.paths[index.column()]
 			if path:
 				return "<img src=\"%s\">" % (path)
 			return ""
-		
+			
 		if role == QtCore.Qt.UserRole:
 			item = self.model.samples[index.column()]
 			item.index = index
