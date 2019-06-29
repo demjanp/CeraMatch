@@ -440,9 +440,9 @@ def get_sample_labels(distance):
 	sample_labels = defaultdict(str) # {sample_idx: label, ...}
 	for z_idx in sorted(sample_idxs.keys()):
 		for idx in sample_idxs[z_idx]:
-			sample_labels[idx] += ".%d" % (int(z_idx) + 1)
+			sample_labels[idx] += ".%d" % (int(z_idx))
 	for idx in sample_labels:
-		sample_labels[idx] = sample_labels[idx][1:]
+		sample_labels[idx] = ".".join(sample_labels[idx].split(".")[2:])
 	
 	return sample_labels
 

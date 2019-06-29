@@ -16,6 +16,7 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		
 		self.split_button = Button("Split", self.view.on_split_cluster)
 		self.join_button = Button("Join", self.view.on_join_cluster)
+		self.split_at_selected_button = Button("Split At Selected", self.view.on_split_at_selected)
 		self.manual_button = Button("Create Manual", self.view.on_manual_cluster)
 		self.split_all_button = Button("Split All", self.view.on_split_all_clusters)
 		self.outlier_button = Button("Set Outlier", self.view.on_set_outlier, icon = "reject.svg")
@@ -24,6 +25,7 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		
 		self.layout().addWidget(self.split_button)
 		self.layout().addWidget(self.join_button)
+		self.layout().addWidget(self.split_at_selected_button)
 		self.layout().addWidget(self.manual_button)
 		self.layout().addWidget(self.split_all_button)
 		self.layout().addWidget(self.outlier_button)
@@ -38,9 +40,11 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		
 		self.split_button.setEnabled(len(selected) > 0)
 		
+		self.split_at_selected_button.setEnabled(len(selected) == 1)
+		
 		self.join_button.setEnabled(has_cluster)
 		
-		self.manual_button.setEnabled(len(selected) > 1)
+		self.manual_button.setEnabled(len(selected) > 0)
 		
 		self.outlier_button.setEnabled(has_cluster)
 		

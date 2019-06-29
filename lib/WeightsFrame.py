@@ -24,6 +24,7 @@ class WeightsFrame(QtWidgets.QFrame):
 		
 		self.setLayout(QtWidgets.QVBoxLayout())
 		self.layout().setContentsMargins(0, 0, 0, 0)
+		self.setMinimumWidth(250)
 		
 		self.group = QtWidgets.QGroupBox("Weights")
 		self.group.setLayout(QtWidgets.QVBoxLayout())

@@ -38,6 +38,7 @@ class Model(Store):
 #		for name in self.weights:
 #			self.weights[name] = 1/len(self.weights)
 		self.cluster_weights = {} # {name: weights, ...}
+		self.cluster_history = [] # [data, ...]; data = {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
 		
 		Store.__init__(self, parent = self.view)
 		
@@ -245,7 +246,7 @@ class Model(Store):
 		sample_id = self.distmax_ordering[row]
 		self.load_distance(sample_id)
 	
-	def split_cluster(self, supercluster = None):
+	def split_cluster(self, supercluster = None, no_history = False):
 		
 		if supercluster:
 			sample_idxs = [self.sample_ids.index(sample.id) for sample in self.samples if sample.cluster == supercluster]
@@ -260,6 +261,8 @@ class Model(Store):
 		if pca_scores is None:
 			return
 		
+		if not no_history:
+			self.update_cluster_history()
 		sample_labels = get_sample_labels(pca_scores)
 		sample_labels = dict([(self.sample_ids[sample_idxs[idx]], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
 		labels_new = set()
@@ -267,36 +270,40 @@ class Model(Store):
 			labels_new.add(".".join(sample_labels[sample_id].split(".")[:2]))
 		label1 = sorted(list(labels_new))[0]
 		clusters = {}  # {sample_id: cluster, ...}
-		labels = {}  # {sample_id: label, ...}
+#		labels = {}  # {sample_id: label, ...}
 		for idx in sample_idxs:
 			sample_id = self.sample_ids[idx]
 			i = 1 if sample_labels[sample_id].startswith(label1) else 2
 			if supercluster:
 				clusters[sample_id] = "%s.%d" % (supercluster, i)
-				labels[sample_id] = "%s.%s" % (supercluster, sample_labels[sample_id])
+#				labels[sample_id] = "%s_%s" % (supercluster, sample_labels[sample_id])
 			else:
 				clusters[sample_id] = str(i)
-				labels[sample_id] = sample_labels[sample_id]
+#				labels[sample_id] = sample_labels[sample_id]
 		
 		for sample in self.samples:
 			if sample.id in clusters:
 				sample.cluster = clusters[sample.id]
-				sample.leaf = labels[sample.id]
+#				sample.leaf = labels[sample.id]
+				sample.leaf = None
 		
 		clusters = set(clusters.values())
 		for cluster in clusters:
 			self.cluster_weights[cluster] = {}
 			for name in self.weights:
 				self.cluster_weights[cluster][name] = self.weights[name]
-	
+		
+		self.update_leaves()
+		
 	def split_all_clusters(self):
 		
+		self.update_cluster_history()
 		clusters = self.get_samples_clusters()
 		if not clusters:
-			self.split_cluster(None)
+			self.split_cluster(None, no_history = True)
 		else:
 			for cluster in clusters:
-				self.split_cluster(cluster)
+				self.split_cluster(cluster, no_history = True)
 	
 	def clear_clusters(self):
 		
@@ -309,20 +316,52 @@ class Model(Store):
 		if not cluster:
 			return
 		
+		self.update_cluster_history()
+		
 		if "." not in cluster:
 			for sample in self.samples:
-				sample.cluster = None
-				sample.leaf = None
-			self.load_ids()
-			return
+				if sample.cluster == cluster:
+					sample.cluster = None
+					sample.leaf = None
+		else:
+			supercluster = ".".join(cluster.split(".")[:-1])
+			for sample in self.samples:
+				if sample.cluster == cluster:
+					sample.cluster = supercluster
+	
+	def split_cluster_at(self, sample):
 		
-		supercluster = cluster.split(".")[:-1]
-		cluster = ".".join(supercluster)
+		self.update_cluster_history()
+		cluster = sample.cluster
+		if cluster is None:
+			cluster = "1"
+		id = sample.id
+		found_id = False
+		cluster1 = "%s.1" % (cluster)
+		cluster2 = "%s.2" % (cluster)
+		print(id, cluster1, cluster2)  # DEBUG
+		cnt = 1
 		for sample in self.samples:
-			if sample.cluster and (sample.cluster.split(".")[:-1] == supercluster):
-				sample.cluster = cluster
+			if sample.cluster != cluster:
+				continue
+			if sample.id == id:
+				found_id = True
+			if found_id:
+				sample.cluster = cluster2
+				cnt = 1
+			else:
+				sample.cluster = cluster1
+			sample.leaf = None
+		for cluster in [cluster1, cluster2]:
+			self.cluster_weights[cluster] = {}
+			for name in self.weights:
+				self.cluster_weights[cluster][name] = self.weights[name]			
+		
+		self.update_leaves()
 	
 	def manual_cluster(self, samples):
+		
+		self.update_cluster_history()
 		
 		manual_n = 0
 		for sample in self.samples:
@@ -396,7 +435,7 @@ class Model(Store):
 				else:
 					clu_sample_labels = get_sample_labels(pca_scores)
 				for idx in clu_sample_labels:
-					sample_labels[self.sample_ids[clusters[cluster][idx]]] = clu_sample_labels[idx]
+					sample_labels[self.sample_ids[clusters[cluster][idx]]] = "%s_%s" % (cluster, clu_sample_labels[idx])
 		for sample in self.samples:
 			sample.value = sample_labels[sample.id]
 			sample.leaf = sample_labels[sample.id]
@@ -411,6 +450,7 @@ class Model(Store):
 	
 	def set_outlier(self, samples):
 		
+		self.update_cluster_history()
 		for sample in samples:
 			sample.outlier = not sample.outlier
 			if sample.outlier:
@@ -418,6 +458,7 @@ class Model(Store):
 	
 	def set_central(self, samples):
 		
+		self.update_cluster_history()
 		for sample in samples:
 			sample.central = not sample.central
 			if sample.central:
@@ -476,6 +517,12 @@ class Model(Store):
 				level = max(level, len(sample.cluster.split(".")))
 		return level
 	
+	def has_history(self):
+		
+		if self.cluster_history:
+			return True
+		return False
+	
 	def set_datasource(self, data_source):
 		
 		Store.set_datasource(self, data_source)
@@ -491,13 +538,14 @@ class Model(Store):
 		
 		self.dc = Commander(model = self)
 	
-	def save_clusters(self, path):
+	def clusters_todict(self):
+		
+		data = {} # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
 		
 		if not self.has_clusters():
-			return
+			return data
 		
 		# self.cluster_weights = {name: weights, ...}
-		data = {} # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
 		for cluster in self.cluster_weights:
 			data[cluster] = dict(
 				weights = dict(self.cluster_weights[cluster].items()),
@@ -506,15 +554,10 @@ class Model(Store):
 		for sample in self.samples:
 			if sample.cluster:
 				data[sample.cluster]["samples"].append(sample.to_dict())
-		with open(path, "w") as f:
-			json.dump(data, f)
+		return data
 	
-	def load_clusters(self, path):
+	def clusters_fromdict(self, data):
 		
-		if not os.path.isfile(path):
-			return
-		with open(path, "r") as f:
-			data = json.load(f)  # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
 		self.cluster_weights = {}
 		self.sample_data = {} # {sample_id: sample_dict, ...}
 		for cluster in data:
@@ -527,9 +570,44 @@ class Model(Store):
 				sample.from_dict(self.sample_data[sample.id])
 		self.populate_clusters()
 	
+	def update_cluster_history(self):
+		
+		data = self.clusters_todict()
+		if data:
+			self.cluster_history.append(data)
+	
+	def save_clusters(self, path):
+		
+		data = self.clusters_todict()  # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
+		
+		if not data:
+			return
+		
+		with open(path, "w") as f:
+			json.dump(data, f)
+	
+	def load_clusters(self, path):
+		
+		self.update_cluster_history()
+		if not os.path.isfile(path):
+			return
+		with open(path, "r") as f:
+			data = json.load(f)  # {cluster: {"weights": weights, "samples": [sample.todict(), ...], ...}
+		
+		self.clusters_fromdict(data)
+	
 	def save_clusters_pdf(self, path):
 		
 		save_clusters_as_pdf(path, self.samples)
+	
+	def undo_clustering(self):
+		
+		if not self.cluster_history:
+			return
+		data = self.cluster_history.pop()
+		if not data:
+			return
+		self.clusters_fromdict(data)
 	
 	def on_selected(self):
 		

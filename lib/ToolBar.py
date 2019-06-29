@@ -26,6 +26,16 @@ class ToolBar(object):
 		self.action_save_pdf = QtWidgets.QAction(QtGui.QIcon("res\capture_pdf.svg"), "Save as PDF", self.view)
 		self.action_save_pdf.triggered.connect(self.on_save_pdf)
 		self.toolbar.addAction(self.action_save_pdf)
+		
+		self.toolbar.addSeparator()
+		
+		self.action_undo = QtWidgets.QAction(QtGui.QIcon("res\\undo.svg"), "Undo", self.view)
+		self.action_undo.triggered.connect(self.on_undo)
+		self.toolbar.addAction(self.action_undo)
+	
+	def update(self):
+		
+		self.action_undo.setEnabled(self.model.has_history())
 	
 	def on_load(self, *args):
 		
@@ -47,3 +57,8 @@ class ToolBar(object):
 		if path:
 			self.last_dir = os.path.split(path)[0]
 			self.model.save_clusters_pdf(path)
+	
+	def on_undo(self, *args):
+		
+		self.model.undo_clustering()
+

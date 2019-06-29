@@ -7,7 +7,7 @@ class ImageDelegate(QtWidgets.QStyledItemDelegate):
 		self.parent = parent
 		
 		QtWidgets.QStyledItemDelegate.__init__(self, parent)
-	
+		
 	def paint(self, painter, option, index):
 		
 		sample = index.data(QtCore.Qt.UserRole)

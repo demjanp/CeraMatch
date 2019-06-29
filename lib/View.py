@@ -82,9 +82,6 @@ class View(QtWidgets.QMainWindow):
 		
 		self.setStatusBar(self.statusbar)
 		
-		self.splitter.setStretchFactor(0,1)
-		self.splitter.setStretchFactor(1,3)
-		
 		self._loaded = True
 		
 		self.setGeometry(100, 100, 1024, 768)
@@ -106,6 +103,7 @@ class View(QtWidgets.QMainWindow):
 		if not self.model.samples:
 			return
 		
+		self.toolbar.update()
 		self.weights_frame.update()
 		self.cluster_group.update()
 		self.footer_frame.update()
@@ -204,6 +202,15 @@ class View(QtWidgets.QMainWindow):
 				self.model.join_cluster(cluster)
 		else:
 			self.model.join_cluster()
+		self.model.populate_clusters(selected[0])
+	
+	def on_split_at_selected(self, *args):
+		
+		selected = self.image_view.get_selected()
+		if len(selected) != 1:
+			return
+		self.mode = self.MODE_CLUSTER
+		self.model.split_cluster_at(selected[0])
 		self.model.populate_clusters(selected[0])
 	
 	def on_manual_cluster(self, *args):

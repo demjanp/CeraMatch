@@ -13,6 +13,7 @@ class TableModel(QtCore.QAbstractTableModel):
 		self.model = view.model
 		self.icon_size = icon_size
 		self.icons = [] # [QIcon or None, ...]; for each image
+		self.paths = [] # [path or None, ...]; for each image
 		self.empty_icon = None
 		self.proxy_model = None
 		self.threads = {} # {column: IconThread, ...}
@@ -27,6 +28,7 @@ class TableModel(QtCore.QAbstractTableModel):
 		self.font.setPointSize(12)
 		
 		self.icons = [None] * len(self.model.samples)
+		self.paths = [None] * len(self.model.samples)
 	
 	def stop_threads(self):
 		
@@ -60,14 +62,13 @@ class TableModel(QtCore.QAbstractTableModel):
 			return QtGui.QColor(QtCore.Qt.white)
 		
 		if role == QtCore.Qt.DecorationRole:
-			level = index.row() + 1
-			label = self.model.samples[index.column()].label
-			icon = None
-			if isinstance(label, dict) and (level in label):
-				icon = self.icons[index.column()]
-			if icon is None:
-				return self.empty_icon
-			return icon
+			return self.icons[index.column()]
+		
+		if role == QtCore.Qt.ToolTipRole:
+			path = self.paths[index.column()]
+			if path:
+				return "<img src=\"%s\">" % (path)
+			return ""
 		
 		if role == QtCore.Qt.UserRole:
 			item = self.model.samples[index.column()]
@@ -80,6 +81,7 @@ class TableModel(QtCore.QAbstractTableModel):
 		
 		if not path is None:
 			
+			self.paths[index.column()] = path
 			self.icons[index.column()] = QtGui.QIcon(path)
 			self.icon_loaded.emit(index)
 	

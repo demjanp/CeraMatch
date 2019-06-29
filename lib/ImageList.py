@@ -13,6 +13,7 @@ class ListModel(QtCore.QAbstractListModel):
 		self.model = view.model
 		self.icon_size = icon_size
 		self.icons = [] # [QIcon or None, ...]; for each image
+		self.paths = [] # [path or None, ...]; for each image
 		self.empty_icon = None
 		self.proxy_model = None
 		self.threads = {} # {row: IconThread, ...}
@@ -27,6 +28,7 @@ class ListModel(QtCore.QAbstractListModel):
 		self.font.setPointSize(12)
 		
 		self.icons = [None] * len(self.model.samples)
+		self.paths = [None] * len(self.model.samples)
 	
 	def stop_threads(self):
 		
@@ -53,8 +55,8 @@ class ListModel(QtCore.QAbstractListModel):
 		
 		if role == QtCore.Qt.BackgroundRole:
 			label = self.model.samples[index.row()].label
-			if isinstance(label, dict) and (1 in label):
-				return label[1]
+			if isinstance(label, dict):
+				return label[max(list(label.keys()))]
 			return QtGui.QColor(QtCore.Qt.white)
 		
 		if role == QtCore.Qt.DecorationRole:
@@ -62,6 +64,12 @@ class ListModel(QtCore.QAbstractListModel):
 			if icon is None:
 				return self.empty_icon
 			return icon
+		
+		if role == QtCore.Qt.ToolTipRole:
+			path = self.paths[index.row()]
+			if path:
+				return "<img src=\"%s\">" % (path)
+			return ""
 		
 		if role == QtCore.Qt.UserRole:
 			item = self.model.samples[index.row()]
@@ -74,6 +82,7 @@ class ListModel(QtCore.QAbstractListModel):
 		
 		if not path is None:
 			
+			self.paths[index.row()] = path
 			self.icons[index.row()] = QtGui.QIcon(path)
 			self.icon_loaded.emit(index)
 	
