@@ -17,6 +17,12 @@ class ImageView(QtWidgets.QTabWidget):
 		
 		self.addTab(self.tab_list, "List")
 		self.addTab(self.tab_table, "Clusters")
+		
+		self.currentChanged.connect(self.on_tab_changed)
+	
+	def is_list(self):
+		
+		return self.currentIndex() == 0
 	
 	def get_current(self):
 		
@@ -41,6 +47,10 @@ class ImageView(QtWidgets.QTabWidget):
 		
 		self.tab_list.set_selected(sample_ids)
 		self.tab_table.set_selected(sample_ids)
+	
+	def on_tab_changed(self, index):
+		
+		self.view.update()
 	
 	def __getattr__(self, attr):
 		

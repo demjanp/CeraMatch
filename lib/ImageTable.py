@@ -99,7 +99,6 @@ class TableModel(QtCore.QAbstractTableModel):
 			self.threads[column] = IconThread(self, index, self.icon_size)
 			self.threads[column].start()
 
-
 class ImageTable(QtWidgets.QTableView):
 	
 	def __init__(self, view, icon_size = 256):
@@ -163,6 +162,11 @@ class ImageTable(QtWidgets.QTableView):
 		# returns [Sample, ...]
 		
 		return [index.data(QtCore.Qt.UserRole) for index in self.selectionModel().selectedIndexes()]
+	
+	def get_selected_level(self):
+		# returns [level, ...]
+		
+		return [index.row() + 1 for index in self.selectionModel().selectedIndexes()]
 	
 	def set_selected(self, sample_ids):		
 		

@@ -2,11 +2,14 @@ import numpy as np
 import multiprocessing as mp
 from natsort import natsorted
 from PIL import Image, ImageDraw
-from itertools import combinations
+from itertools import combinations, product
 from collections import defaultdict
 from sklearn.decomposition import PCA
 from scipy.spatial.distance import cdist, pdist
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.cluster.hierarchy import linkage
+from scipy.cluster.vq import kmeans,vq
+from scipy.stats import norm
+
 
 def profile_length(profile):
 	
@@ -364,6 +367,19 @@ def calc_distances(profiles):
 	
 	return distance
 
+def calc_pca_scores(D):
+	
+	pca = PCA(n_components = None)
+	pca.fit(D)
+	n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.99)[0]
+	if not n_components.size:
+		n_components = 1
+	else:
+		n_components = n_components.min() + 1
+	pca = PCA(n_components = n_components)
+	pca.fit(D)
+	return pca.transform(D)
+
 def combine_dists(distance, w_R, w_th, w_kap, w_h, w_diam, w_axis):
 	# distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist]; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist = components of morphometric distance
 	
@@ -445,4 +461,115 @@ def get_sample_labels(distance):
 		sample_labels[idx] = ".".join(sample_labels[idx].split(".")[2:])
 	
 	return sample_labels
+
+def calc_ssd(pca_scores):
+	# calculate sum of squared distances
+	
+	return (((pca_scores - pca_scores.mean(axis = 0))**2).sum(axis = 1)).sum()
+
+def get_2_clusters(pca_scores):
+	
+	if pca_scores.shape[0] <= 2:
+		return [np.array([i], dtype = int) for i in range(pca_scores.shape[0])], 1.0
+	clusters_l, _ = vq(pca_scores, kmeans(pca_scores, 2)[0])
+	labels = np.unique(clusters_l)
+	clusters = []
+	for label in labels:
+		clusters.append(np.where(clusters_l == label)[0].astype(int))
+	if len(clusters) != 2:
+		return clusters, 1.0
+	ssd_samples = calc_ssd(pca_scores)
+	ssd_clusters = 0
+	for cluster in clusters:
+		if len(cluster) < 2:
+			pass
+		else:
+			ssd_clusters += calc_ssd(pca_scores[cluster])
+	ci = ssd_clusters / ssd_samples
+	return clusters, ci
+
+def get_ci_mp(params):
+	
+	w_h, w_diam, w_axis, D_samples = params
+	_, ci = get_2_clusters(calc_pca_scores(combine_dists(D_samples, 0, 0, 0, w_h, w_diam, w_axis)))
+	return ci
+
+def get_cis_sp(weights, D_samples):
+	
+	cis = []
+	for w_h, w_diam, w_axis in weights:
+		_, ci = get_2_clusters(calc_pca_scores(combine_dists(D_samples, 0, 0, 0, w_h, w_diam, w_axis)))
+		cis.append(ci)
+	return np.array(cis)
+
+def split_cluster(D, samples, weights, pool):
+	# returns [cluster, ...]
+	
+	if len(samples) <= 2:
+		return [np.array([idx], dtype = int) for idx in samples], 1.0
+	
+	D_samples = D[:,samples][samples]
+	if len(samples) > 100:
+		cis = np.array(pool.map(get_ci_mp, ([w_h, w_diam, w_axis, D_samples] for w_h, w_diam, w_axis in weights)))
+	else:
+		cis = get_cis_sp(weights, D_samples)
+	
+	w_h, w_diam, w_axis = weights[np.argmin(cis)]
+	pca_scores = calc_pca_scores(combine_dists(D[:,samples][samples], 0, 0, 0, w_h, w_diam, w_axis))
+	clusters, ci_obs = get_2_clusters(pca_scores)
+	
+	samples = np.array(samples, dtype = int)
+	return [samples[cluster] for cluster in clusters], w_h, w_diam, w_axis
+	
+def get_auto_clusters(D, n_min = 5):
+	
+	pool = mp.Pool(processes = mp.cpu_count())
+	
+	weights = set() # [[w_h, w_diam, w_axis], ...]
+	values = np.round(np.linspace(0, 1, 11), 1).tolist()
+	for row in product(*[values for i in range(2)]):
+		if row[1] > 0.2:  # DEBUG
+			continue
+		w_axis = 1 - sum(row)
+		if w_axis < 0:
+			continue
+		weights.add(tuple(list(row) + [w_axis]))
+	weights = list(weights)
+	
+	tree = {}  # {label: [sample_idx, ...], ...}
+	clu_weights = {} # {label: [w_h, w_diam, w_axis], ...}
+	has_children = set([])
+	todo = {}
+	todo["1"] = np.arange(D.shape[0], dtype = int)
+	tree["1"] = todo["1"].tolist()
+	last_label = 1
+	while todo:
+		for label in todo:
+			samples = todo[label].copy()
+			del todo[label]
+			clusters, w_h, w_diam, w_axis = split_cluster(D, samples, weights, pool)
+			if len(clusters) > 1:
+				has_children.add(label)
+				clu_weights[label] = [w_h, w_diam, w_axis]
+				print("\rFound %d branches" % (len(has_children)), end = "")
+				for cluster in clusters:
+					last_label += 1
+					label_new = "%s.%d" % (label, last_label)
+					tree[label_new] = cluster.tolist()
+					clu_weights[label_new] = [w_h, w_diam, w_axis]
+					if cluster.shape[0] >= n_min:
+						todo[label_new] = cluster.copy()
+			break
+	collect = {}  # {label: [sample_idx, ...], ...}
+	for label in tree:
+		if label not in has_children:
+			collect[label] = tree[label].copy()
+	clusters = {}  # {sample_idx: label, ...}
+	for label in collect:
+		for sample_idx in collect[label]:
+			clusters[sample_idx] = label
+	
+	pool.close()
+	
+	return clusters, clu_weights
 

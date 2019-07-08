@@ -14,8 +14,10 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		
 		self.setLayout(QtWidgets.QVBoxLayout())
 		
+		self.autoclust_button = Button("Auto Cluster", self.view.on_auto_cluster)
 		self.split_button = Button("Split", self.view.on_split_cluster)
-		self.join_button = Button("Join", self.view.on_join_cluster)
+		self.join_parent_button = Button("Join to Parent", self.view.on_join_parent)
+		self.join_children_button = Button("Join Children", self.view.on_join_children)
 		self.split_at_selected_button = Button("Split At Selected", self.view.on_split_at_selected)
 		self.manual_button = Button("Create Manual", self.view.on_manual_cluster)
 		self.split_all_button = Button("Split All", self.view.on_split_all_clusters)
@@ -23,8 +25,10 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		self.central_button = Button("Set Central", self.view.on_set_central, icon = "accept.svg")
 		self.clear_button = Button("Clear All", self.view.on_clear_clusters)
 		
+		self.layout().addWidget(self.autoclust_button)
 		self.layout().addWidget(self.split_button)
-		self.layout().addWidget(self.join_button)
+		self.layout().addWidget(self.join_parent_button)
+		self.layout().addWidget(self.join_children_button)
 		self.layout().addWidget(self.split_at_selected_button)
 		self.layout().addWidget(self.manual_button)
 		self.layout().addWidget(self.split_all_button)
@@ -42,7 +46,8 @@ class ClusterGroup(QtWidgets.QGroupBox):
 		
 		self.split_at_selected_button.setEnabled(len(selected) == 1)
 		
-		self.join_button.setEnabled(has_cluster)
+		self.join_parent_button.setEnabled(has_cluster)
+		self.join_children_button.setEnabled(has_cluster and not self.view.image_view.is_list())
 		
 		self.manual_button.setEnabled(len(selected) > 0)
 		

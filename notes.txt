@@ -1,5 +1,4 @@
 ----------
-
 GUI:
 
 interface with Deposit

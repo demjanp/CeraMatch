@@ -158,6 +158,10 @@ class ImageList(QtWidgets.QListView):
 		
 		return [index.data(QtCore.Qt.UserRole) for index in self.selectionModel().selectedIndexes()]
 	
+	def get_selected_level(self):
+		
+		return []
+	
 	def set_selected(self, sample_ids):		
 		
 		self.blockSignals(True)

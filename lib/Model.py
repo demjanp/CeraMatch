@@ -90,15 +90,7 @@ class Model(Store):
 			D = self.get_distance()
 		if D.shape[0] < 2:
 			return None
-		pca = PCA(n_components = None)
-		pca.fit(D)
-		n_components = np.where(np.cumsum(pca.explained_variance_ratio_) > 0.99)[0]
-		if not n_components.size:
-			return None
-		n_components = n_components.min()
-		pca = PCA(n_components = n_components)
-		pca.fit(D)
-		return pca.transform(D)
+		return calc_pca_scores(D)
 	
 	def get_samples_clusters(self, samples = []):
 		
@@ -294,6 +286,26 @@ class Model(Store):
 				self.cluster_weights[cluster][name] = self.weights[name]
 		
 		self.update_leaves()
+	
+	def auto_cluster(self):
+		
+		clusters, clu_weights = get_auto_clusters(self.distance)  # {sample_idx: cluster, ...}
+		clusters = dict([(self.sample_ids[idx], clusters[idx]) for idx in clusters])  # {sample_id: cluster, ...}
+		for sample in self.samples:
+			if sample.id in clusters:
+				sample.cluster = clusters[sample.id]
+				sample.leaf = None
+		for cluster in clu_weights:
+			w_h, w_diam, w_axis = clu_weights[cluster]
+			self.cluster_weights[cluster] = {
+				"Radius": 0,
+				"Tangent": 0,
+				"Curvature": 0,
+				"Hamming": w_h,
+				"Diameter": w_diam,
+				"Axis": w_axis,
+			}
+		self.update_leaves()
 		
 	def split_all_clusters(self):
 		
@@ -311,7 +323,7 @@ class Model(Store):
 			sample.cluster = None
 			sample.leaf = None
 	
-	def join_cluster(self, cluster):
+	def join_cluster_to_parent(self, cluster):
 		
 		if not cluster:
 			return
@@ -328,6 +340,20 @@ class Model(Store):
 			for sample in self.samples:
 				if sample.cluster == cluster:
 					sample.cluster = supercluster
+	
+	def join_children_to_cluster(self, cluster, level):
+		
+		if not cluster:
+			return
+		
+		self.update_cluster_history()
+		
+		cluster = ".".join(cluster.split(".")[:level])
+		for sample in self.samples:
+			if sample.cluster is None:
+				continue
+			if sample.cluster.startswith("%s." % (cluster)):
+				sample.cluster = cluster
 	
 	def split_cluster_at(self, sample):
 		

@@ -116,6 +116,10 @@ class View(QtWidgets.QMainWindow):
 		
 		if selected:
 			cluster = selected[0].cluster
+			levels = self.image_view.get_selected_level()
+			if levels:
+				cluster = ".".join(cluster.split(".")[:levels[0]])
+			
 			if cluster:
 				text = "Cluster: %s, Label: %s, Sample ID: %s" % (cluster, selected[0].value, selected[0].id)
 			else:
@@ -186,7 +190,13 @@ class View(QtWidgets.QMainWindow):
 			self.model.split_cluster()
 		self.model.populate_clusters(selected[0])
 	
-	def on_join_cluster(self, *args):
+	def on_auto_cluster(self, *args):
+		
+		self.mode = self.MODE_CLUSTER
+		self.model.auto_cluster()
+		self.model.populate_clusters()
+	
+	def on_join_parent(self, *args):
 		
 		selected = self.image_view.get_selected()
 		if not selected:
@@ -200,9 +210,33 @@ class View(QtWidgets.QMainWindow):
 			clusters.add(sample.cluster)
 		if clusters:
 			for cluster in clusters:
-				self.model.join_cluster(cluster)
+				self.model.join_cluster_to_parent(cluster)
 		else:
-			self.model.join_cluster()
+			self.model.join_cluster_to_parent()
+		self.model.populate_clusters(selected[0])
+	
+	def on_join_children(self, *args):
+		
+		selected = self.image_view.get_selected()
+		if not selected:
+			return
+		self.mode = self.MODE_CLUSTER
+
+		clusters = set()
+		for sample in selected:
+			if sample.cluster is None:
+				continue
+			clusters.add(sample.cluster)
+		if clusters:
+			
+			levels = self.image_view.get_selected_level()
+			if not levels:
+				return
+			level = max(levels)
+			for cluster in clusters:
+				self.model.join_children_to_cluster(cluster, level)
+		else:
+			return
 		self.model.populate_clusters(selected[0])
 	
 	def on_split_at_selected(self, *args):
