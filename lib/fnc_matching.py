@@ -159,8 +159,17 @@ def axis_dist(axis1, axis2, axis_step):
 	else:
 		d_norm = d_norm.mean()
 		w = np.ones(axis_shorter.shape[0]) / axis_shorter.shape[0]
-	d = cdist(axis_shorter, axis_longer).min(axis = 1)
-	return (d * w).sum() / d_norm
+	d1 = cdist(axis_shorter, axis_longer).min(axis = 1)
+	d2 = cdist(axis_longer, axis_shorter).min(axis = 1)
+	
+	d_norm2 = np.abs(np.linspace(0, np.sqrt((axis_shorter[-1]**2).sum()), axis_longer.shape[0]) + np.linspace(0, np.sqrt((axis_longer[-1]**2).sum()), axis_longer.shape[0])).mean()
+	d2_sum = 0
+	for pnt in axis_longer:
+		d = cdist([pnt], axis_shorter)[0]
+		idx = np.argmin(d)
+		d2_sum += d[idx] * w[idx]
+	
+	return (((d1 * w).sum() / d_norm) + (d2_sum / d_norm2)) / 2
 
 def arc_length(profile):
 	
