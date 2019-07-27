@@ -1,4 +1,12 @@
 ----------
+
+new clustering method:
+1. filter out well preserved profiles (high eve, high axis length / thickness)
+2. find general shape groups (based on axis / diameter)
+3. add the rest and find clusters based on details (hamming)
+4. calculate probabilistic assignment of fragments to clusters
+
+----------
 GUI:
 
 interface with Deposit

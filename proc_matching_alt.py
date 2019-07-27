@@ -2,11 +2,10 @@ from lib.fnc_matching import *
 import json
 import os
 import numpy as np
-from scipy import spatial, optimize
 
 fprofiles = "data/profiles.json"
-ffindids = "data/matching_find_ids.json"
-fmatching = "data/matching.npy"
+ffindids = "data/matching_alt_find_ids.json"
+fmatching = "data/matching_alt.npy"
 
 if __name__ == '__main__':
 	
@@ -45,7 +44,24 @@ if __name__ == '__main__':
 	with open(ffindids, "w") as f:
 		json.dump(sample_ids, f)
 	
-	distance = calc_distances(profiles)
+	distance = calc_distances_alt(profiles)
+	
+	# normalize by ensemble average (see Karasik and Smilansky 2011)
+	avg_R, avg_th, avg_kap = 0, 0, 0
+	for sample_id in profiles:
+		profile, _, radius, _, _ = profiles[sample_id]
+		prof = fftsmooth(profile + [radius, 0])
+		L = np.abs(arc_length(prof)).sum()
+		avg_R += np.sqrt((prof[1:,0]**2).sum() / L)
+		th = tangent(prof)
+		avg_th += np.sqrt((th**2).sum() / L)
+		avg_kap += np.sqrt((np.gradient(th)**2).sum() / L)
+	M = len(profiles)
+	avg_R, avg_th, avg_kap = avg_R / M, avg_th / M, avg_kap / M
+	distance[:,:,0] /= avg_R
+	distance[:,:,1] /= avg_th
+	distance[:,:,2] /= avg_kap
 	
 	np.save(fmatching, distance)
-	# distance[i, j] = [diam_dist, thick_dist, ax_dist, h_dist, ht_dist]
+	# distance[i, j] = [R_dist, th_dist, kap_dist]
+

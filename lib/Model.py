@@ -14,8 +14,12 @@ import json
 import os
 
 FSAMPLE_IDS = "matching_find_ids.json"
+#FSAMPLE_IDS = "matching_find_ids_filt.json"	
 FMATCHING = "matching.npy"
+#FMATCHING = "matching_filt.npy"
 DB_URL = "db_typology\\kap_typology.json"
+
+fmanual = "data/clusters_manual.json"
 
 class Model(Store):
 	
@@ -49,6 +53,32 @@ class Model(Store):
 		with open(os.path.join(root_path, FSAMPLE_IDS), "r") as f:
 			self.sample_ids = json.load(f)
 		
+		self.distance = np.load(os.path.join(root_path, FMATCHING)) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist]
+		
+		with open(fmanual, "r") as f:
+			clusters_manual = json.load(f)  # {label: [sample_id, ...], ...}
+		collect = {}
+		for label in clusters_manual:
+			if label.startswith("1."):
+				continue
+			collect[label] = clusters_manual[label]
+		clusters_manual = collect
+		
+		collect = []
+		for sample_id in self.sample_ids:
+			has_manual_cluster = False
+			for label in clusters_manual:
+				if sample_id in clusters_manual[label]:
+					has_manual_cluster = True
+					break
+			if not has_manual_cluster:
+				continue
+			collect.append(sample_id)
+		samples = [self.sample_ids.index(sample_id) for sample_id in collect]
+		self.distance = self.distance[:,samples][samples]
+		self.sample_ids = collect
+		samples = np.arange(len(self.sample_ids), dtype = int)
+		
 		row = 0
 		for id in self.classes["Sample"].objects:
 			obj = self.objects[id]
@@ -58,7 +88,6 @@ class Model(Store):
 			self.samples.append(Sample(sample_id, obj.descriptors["Reconstruction"].label, sample_id, sample_id, row))
 			row += 1
 		
-		self.distance = np.load(os.path.join(root_path, FMATCHING)) # distance[i, j] = [R_dist, th_dist, kap_dist, h_dist, diam_dist, axis_dist]
 		
 	def set_weight(self, name, value):
 		
@@ -82,7 +111,7 @@ class Model(Store):
 	
 	def get_distance(self):
 		
-		return combine_dists(self.distance, self.weights["Radius"], self.weights["Tangent"], self.weights["Curvature"], self.weights["Hamming"], self.weights["Diameter"], self.weights["Axis"])
+		return combine_dists(self.distance, [self.weights["Diameter"], self.weights["Axis"], self.weights["Hamming"]])
 	
 	def get_pca(self, D = None):
 		
@@ -131,6 +160,8 @@ class Model(Store):
 	
 	def optimize_weights_all(self, sample_ids, steps = 20):
 		
+		return  # DEBUG
+		
 		idxs = [self.sample_ids.index(sample_id) for sample_id in sample_ids]
 		distance = self.distance[:,idxs][idxs]
 		weights = set() # [[w_R, w_th, w_kap, w_h, w_diam, w_axis], ...]
@@ -155,6 +186,8 @@ class Model(Store):
 		))
 	
 	def optimize_weights(self, sample_ids, steps = 20):
+		
+		return  # DEBUG
 		
 		idxs = [self.sample_ids.index(sample_id) for sample_id in sample_ids]
 		distance = self.distance[:,idxs][idxs]
@@ -289,24 +322,25 @@ class Model(Store):
 	
 	def auto_cluster(self):
 		
-		clusters, clu_weights = get_auto_clusters(self.distance)  # {sample_idx: cluster, ...}
+		clusters, outliers, clu_weights = get_auto_clusters(self.distance)  # {sample_idx: cluster, ...}
 		clusters = dict([(self.sample_ids[idx], clusters[idx]) for idx in clusters])  # {sample_id: cluster, ...}
 		for sample in self.samples:
 			if sample.id in clusters:
 				sample.cluster = clusters[sample.id]
 				sample.leaf = None
 		for cluster in clu_weights:
-			w_h, w_diam, w_axis = clu_weights[cluster]
+			w_diam, w_axis, w_h = clu_weights[cluster]
 			self.cluster_weights[cluster] = {
 				"Radius": 0,
 				"Tangent": 0,
 				"Curvature": 0,
-				"Hamming": w_h,
 				"Diameter": w_diam,
 				"Axis": w_axis,
+				"Hamming": w_h,
 			}
-		self.update_leaves()
 		
+		self.update_leaves()
+	
 	def split_all_clusters(self):
 		
 		self.update_cluster_history()
