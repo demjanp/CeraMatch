@@ -1,7 +1,7 @@
 
 class Sample(object):
 	
-	def __init__(self, id, resource, label, value, row):
+	def __init__(self, id, resource, label, value, row, obj_id):
 		# label = text label or {clustering_level: color, ...}
 		
 		self.id = id
@@ -9,12 +9,9 @@ class Sample(object):
 		self.label = label
 		self.value = value
 		self.row = row
+		self.obj_id = obj_id
 		self.index = None
 		self.cluster = None
-		self.leaf = None
-		
-		self.outlier = False
-		self.central = False
 
 	def has_cluster(self):
 		
@@ -28,9 +25,7 @@ class Sample(object):
 			id = self.id,
 			value = self.value,
 			cluster = self.cluster,
-			leaf = self.leaf,
-			outlier = self.outlier,
-			central = self.central,
+			obj_id = self.obj_id,
 		)
 	
 	def from_dict(self, data):
@@ -38,6 +33,4 @@ class Sample(object):
 		self.id = data["id"]
 		self.value = data["value"]
 		self.cluster = data["cluster"]
-		self.leaf = data["leaf"]
-		self.outlier = data["outlier"]
-		self.central = data["central"]
+		self.obj_id = data["obj_id"]

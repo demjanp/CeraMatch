@@ -1,14 +1,71 @@
-----------
 
-new clustering method:
-1. filter out well preserved profiles (high eve, high axis length / thickness)
-2. find general shape groups (based on axis / diameter)
-3. add the rest and find clusters based on details (hamming)
-4. calculate probabilistic assignment of fragments to clusters
+check if nonlinear / piecewise linear algebra (deep learning) can be used for clustering
+check Unsupervised learning using Neural Networks
 
-----------
-GUI:
+distmax - try sort using global maximum optimization so that 10% most distant samples have maximum (min / avg / median?) distance
 
-interface with Deposit
+--------------------
 
-prototypes (e.g. in a dendrogram?)
+connect with Deposit
+
+Sample.Id
+Sample.Profile
+Sample.Reconstruction
+
+store distances in Deposit
+weight(Sample.diam_dist.Sample) = diam_dist
+weight(Sample.axis_dist.Sample) = axis_dist
+weight(Sample.h_dist.Sample) = h_dist
+
+store clustering in Deposit
+CMCluster.contains.Sample
+CMCluster.Name = [cluster name]
+
+--------------------
+
+lib.fnc_matching -> 
+
+calc_distances(profiles)
+	# profiles[sample_id] = [profile, radius]
+	
+	axis = profile_axis(profile, rasterize_factor)
+		[describe find axis]
+	
+	keypoints, thickness = find_keypoints(profile, rasterize_factor)
+		[describe find keypoints]
+	
+	# data[sample_id] = [profile, axis, radius, keypoints, thickness]
+	dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax)
+
+dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax)
+	profile1, axis1, radius1, keypoints1, thickness1 = data[sample_ids[i]]
+	profile2, axis2, radius2, keypoints2, thickness2 = data[sample_ids[j]]
+	
+	diam_dist = diameter_dist(axis1, radius1, axis2, radius2)
+		[describe diameter_dist]
+	
+	ax_dist = axis_dist(axis1, axis2)
+		[describe axis dist]
+	
+	h_dist_sum1, h_dist_norm1 = frame_hamming(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
+	h_dist_sum2, h_dist_norm2 = frame_hamming(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
+		[describe hamming dist]
+	
+	h_dist = np.sqrt((h_dist_sum1 + h_dist_sum2) / (h_dist_norm1 + h_dist_norm2))
+
+
+D[i, j] = [diam_dist, ax_dist, h_dist]
+
+
+get_clusters(D, limit = 0.68)
+	
+	normalize D: move each component to 0 and divide by mean
+	limit = D.mean() * 0.68
+	
+	1. each fragment is assigned to its own cluster
+	2. calculate distance between all clusters
+		if any component of distance between members of two clusters > limit: their distance is infinite
+		otherwise their distance is the mean of all components of distances of their members
+	3. join clusters with the smallest distance
+	4. repeat steps 2 and 3 while any two clusters have a finite distance
+

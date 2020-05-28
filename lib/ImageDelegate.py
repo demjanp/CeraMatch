@@ -17,13 +17,4 @@ class ImageDelegate(QtWidgets.QStyledItemDelegate):
 		self.parent.list_model.on_paint(index2)
 		
 		QtWidgets.QStyledItemDelegate.paint(self, painter, option, index)
-		
-		icon = None
-		if sample.outlier:
-			icon = "res\\reject.svg"
-		elif sample.central:
-			icon = "res\\accept.svg"
-		if icon is not None:
-			renderer = QtSvg.QSvgRenderer(icon)
-			renderer.render(painter, QtCore.QRectF(option.rect.x() + 10, option.rect.y() + 10, 36, 36))
 

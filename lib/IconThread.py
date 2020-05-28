@@ -18,7 +18,7 @@ class IconThread(QtCore.QThread):
 	
 	def run(self):
 		
-		path = os.path.join(str(Path.home()), "AppData", "Local", "CeraMatch", "thumbnails", "%s.jpg" % (self.label.filename.split(".")[0]))
+		path = os.path.join(str(Path.home()), "AppData", "Local", "CeraMatch", "thumbnails", "%s.jpg" % (".".join(self.label.filename.split(".")[:-1])))
 		if not os.path.isfile(path):
 			path = self.parent.model.images.get_thumbnail(self.label, size = self.icon_size, root_folder = self.local_folder)
 		self.parent.on_icon_thread(self.index, path)

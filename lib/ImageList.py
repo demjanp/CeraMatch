@@ -56,7 +56,7 @@ class ListModel(QtCore.QAbstractListModel):
 		if role == QtCore.Qt.BackgroundRole:
 			label = self.model.samples[index.row()].label
 			if isinstance(label, dict):
-				return label[max(list(label.keys()))]
+				return label["list"]
 			return QtGui.QColor(QtCore.Qt.white)
 		
 		if role == QtCore.Qt.DecorationRole:

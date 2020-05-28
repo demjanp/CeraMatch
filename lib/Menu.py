@@ -1,48 +1,46 @@
 from deposit.commander.ViewChild import (ViewChild)
 from deposit import Broadcasts
 
+from lib.About import About
+
 from PySide2 import (QtWidgets, QtCore, QtGui)
+import json
 import os
 
-class ToolBar(ViewChild):
+class Menu(ViewChild):
 	
 	def __init__(self, view):
 		
 		ViewChild.__init__(self, view.model, view)
 		
-		self.last_dir = ""
+		self.menubar = self.view.menuBar()
 		
-		self.toolbar = self.view.addToolBar("ToolBar")
-		self.toolbar.setIconSize(QtCore.QSize(36,36))
-		
+		menu = self.menubar.addMenu("Data")
 		self.action_load = QtWidgets.QAction(QtGui.QIcon("res\open.svg"), "Load Database", self.view)
 		self.action_load.triggered.connect(self.on_load)
-		self.toolbar.addAction(self.action_load)
-		
+		menu.addAction(self.action_load)
 		self.action_connect = QtWidgets.QAction(QtGui.QIcon("res\connect.svg"), "Connect to DB", self.view)
 		self.action_connect.setCheckable(True)
 		self.action_connect.triggered.connect(self.on_connect)
-		self.toolbar.addAction(self.action_connect)
-		
+		menu.addAction(self.action_connect)
 		self.action_save = QtWidgets.QAction(QtGui.QIcon("res\save.svg"), "Save", self.view)
 		self.action_save.triggered.connect(self.on_save)
-		self.toolbar.addAction(self.action_save)
-		
-		self.action_deposit = QtWidgets.QAction(QtGui.QIcon("res\dep_cube.svg"), "Open Database in Deposit", self.view)
-		self.action_deposit.triggered.connect(self.on_deposit)
-		self.toolbar.addAction(self.action_deposit)
-		
-		self.toolbar.addSeparator()
-		
+		menu.addAction(self.action_save)
 		self.action_save_pdf = QtWidgets.QAction(QtGui.QIcon("res\capture_pdf.svg"), "Save as PDF", self.view)
 		self.action_save_pdf.triggered.connect(self.on_save_pdf)
-		self.toolbar.addAction(self.action_save_pdf)
+		menu.addAction(self.action_save_pdf)
+		self.action_deposit = QtWidgets.QAction(QtGui.QIcon("res\dep_cube.svg"), "Deposit", self.view)
+		self.action_deposit.triggered.connect(self.on_deposit)
+		menu.addAction(self.action_deposit)
+		menu.addSeparator()
+		self.action_clear_recent = QtWidgets.QAction("Clear Recent", self.view)
+		menu.addAction(self.action_clear_recent)
+		menu.addSeparator()
 		
-		self.toolbar.addSeparator()
-		
-		self.action_undo = QtWidgets.QAction(QtGui.QIcon("res\\undo.svg"), "Undo", self.view)
-		self.action_undo.triggered.connect(self.on_undo)
-		self.toolbar.addAction(self.action_undo)
+		menu = self.menubar.addMenu("Help")
+		self.action_about = QtWidgets.QAction("About", self.view)
+		self.action_about.triggered.connect(self.on_about)
+		menu.addAction(self.action_about)
 		
 		self.connect_broadcast(Broadcasts.VIEW_ACTION, self.on_update)
 		self.connect_broadcast(Broadcasts.STORE_LOADED, self.on_update)
@@ -68,8 +66,6 @@ class ToolBar(ViewChild):
 		else:
 			self.action_save.setEnabled(True)
 			self.action_save_pdf.setEnabled(True)
-		
-		self.action_undo.setEnabled(self.model.has_history())
 	
 	def on_update(self, *args):
 		
@@ -77,34 +73,26 @@ class ToolBar(ViewChild):
 	
 	def on_load(self, *args):
 		
-		if self.model.dc is None:
-			self.model.launch_deposit()
-		self.model.dc.view.toolbar["Load"].triggered(True)
+		self.view.toolbar.on_load()
 	
 	def on_connect(self, *args):
 		
-		if self.model.dc is None:
-			self.model.launch_deposit()
-		self.model.dc.view.toolbar["Connect"].triggered(True)
+		self.view.toolbar.on_connect()
 	
 	def on_save(self, *args):
-
-		if self.model.dc is None:
-			self.model.launch_deposit()
-		self.model.dc.view.toolbar["Save"].triggered(True)
-	
-	def on_deposit(self, *args):
 		
-		self.model.launch_deposit()
+		self.view.toolbar.on_save()
 	
 	def on_save_pdf(self, *args):
 		
-		path, _ = QtWidgets.QFileDialog.getSaveFileName(None, caption = "Save Clustering as PDF", filter = "(*.pdf)")
-		if path:
-			self.last_dir = os.path.split(path)[0]
-			self.model.save_clusters_pdf(path)
+		self.view.toolbar.on_save_pdf()
 	
-	def on_undo(self, *args):
+	def on_deposit(self, *args):
 		
-		self.model.undo_clustering()
-
+		self.view.toolbar.on_deposit()
+	
+	def on_about(self, *args):
+		
+		dialog = About(self.model, self.view, *args)
+		dialog.show()
+	

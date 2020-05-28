@@ -1,14 +1,14 @@
 import numpy as np
 import multiprocessing as mp
-from natsort import natsorted
 from PIL import Image, ImageDraw
-from itertools import combinations, product
+from itertools import combinations
 from collections import defaultdict
 from sklearn.decomposition import PCA
-from scipy.spatial.distance import cdist, pdist
+from skimage.morphology import skeletonize, dilation, square
+from skimage import measure
+from scipy.spatial.distance import cdist, pdist, squareform
 from scipy.cluster.hierarchy import linkage
-from scipy.cluster.vq import kmeans,vq
-from scipy import stats
+from scipy.interpolate import interp1d
 
 def profile_length(profile):
 	
@@ -38,428 +38,497 @@ def set_idx0_to_point(coords, point):
 	idx = np.argmin(cdist([point], coords)[0])
 	return np.roll(coords, -idx, axis = 0)
 
-def axis_params(points):
+def rotate_coords(coords, angle):
 	
-	x0, y0 = points[0]
-	x1 = points[-1,0]
-	y1 = np.poly1d(np.polyfit(points[:,0], points[:,1], 1))(x1)
-	xd, yd = x1 - x0, y1 - y0
-	div = max(abs(xd), abs(yd))
-	if div > 0:
-		xd /= div
-		yd /= div
-	return x0, y0, xd, yd
+	return np.dot(coords,np.array([[np.cos(angle),np.sin(angle)],[-np.sin(angle),np.cos(angle)]]))
 
-def profile_axis(profile, params, step = 0.2, inner_weight = 0.5):
-	# step: generate axis point every step mm
-	# inner_weight: weight of the inner profile when calculating the axis
+def smoothen_coords(coords, step = 0.5, resolution = 0.5):
+	# coords = [[x, y], ...]
 	
-	idx_rim = np.argmin(cdist([get_rim(profile)], profile)[0])
-	profile = fftsmooth(profile, 0.1, params)
-	inner = profile[:idx_rim][::-1]
-	outer = profile[idx_rim:]
-	d_inner = np.sqrt((inner**2).sum(axis = 1))
-	d_outer = np.sqrt((outer**2).sum(axis = 1))
-	d_max = min(d_inner.max(), d_outer.max())
-	d_min = max(d_inner[d_inner > 0].min(), d_outer[d_outer > 0].min())
-	collect = [[0,0]]
-	for d in np.arange(d_min, d_max, step):
-		collect.append((inner[d_inner > d][0]*inner_weight + outer[d_outer > d][0]*(1 - inner_weight)))
-		if cdist([collect[-1]], [collect[-2]])[0][0] < step:
-			del collect[-1]
-	return np.array(collect)
+	if step <= 0:
+		return coords
+	
+	d = np.append(0, np.cumsum(np.sqrt(np.sum(np.diff(coords, axis = 0)**2, axis = 1))))
+	coords = np.array([coords[np.abs(d - d[idx]) < step].mean(axis = 0) for idx in range(coords.shape[0])])
+	
+	collect = [coords[0]]
+	for xy in coords[1:]:
+		if not (xy == collect[-1]).all():
+			collect.append(xy)
+	coords = np.array(collect)
+	
+	d = np.append(0, np.cumsum(np.sqrt(np.sum(np.diff(coords, axis = 0)**2, axis = 1))))
+	l = max(2, int(round(d[-1] / resolution)))
+	alpha = np.linspace(0, d[-1], l)
+	try:
+		coords = interp1d(d, coords, kind = "cubic", axis = 0)(alpha)
+	except:
+		return np.array(collect)
+	
+	return coords
 
-def rotate_profile(profile, angle):
+def clean_mask(mask):
 	
-	ca = np.cos(angle)
-	sa = np.sin(angle)
-	rot_matrix = np.array([[ca, sa],[-sa, ca]])
-	return np.dot(profile, rot_matrix.T)
+	labels = measure.label(mask, background = False)
+	values = np.unique(labels)
+	values = values[values > 0]
+	value = sorted(values.tolist(), key = lambda value: (labels == value).sum())[-1]
+	return (labels == value)
 
-def diameter_dist(radius1, radius2):
+def profile_axis(profile, rasterize_factor):
 	
-	r1, r2 = sorted([radius1, radius2])
-	return 1 - r1 / r2
-
-def thickness_dist(thickness1, thickness2):
-	
-	t1, t2 = sorted([thickness1, thickness2])
-	return 1 - t1 / t2
-
-def hamming_dist(prof1, prof2, rasterize_factor = 10):
-	# prof1, prof2: [[x,y], ...]
-	# prof1 & 2 are assumed to be shifted to 0 ([0,0] coordinate is at the rim)
-	'''
-		H = 1 - (2*Ao) / (A1 + A2)
-		H = hamming distance <0..1>
-		Ao = area of overlaping of profiles
-		A1, A2 = areas of profiles
-	'''
-	
-	[x0, y0], [x1, y1] = prof1.min(axis = 0), prof1.max(axis = 0)
-	[x0_, y0_], [x1_, y1_] = prof2.min(axis = 0), prof2.max(axis = 0)
-	x0, y0, x1, y1 = int(min(x0, x0_)) - 1, int(min(y0, y0_)) - 1, int(max(x1, x1_)) + 1, int(max(y1, y1_)) + 1
+	[x0, y0], [x1, y1] = profile.min(axis = 0), profile.max(axis = 0)
+	x0, y0, x1, y1 = int(x0) - 1, int(y0) - 1, int(x1) + 1, int(y1) + 1
 	w, h = x1 - x0, y1 - y0
-	img = Image.new("1", (w * rasterize_factor, h * rasterize_factor))
-	draw = ImageDraw.Draw(img)
-	prof1 = ((prof1 - [x0, y0]) * rasterize_factor).astype(int)
-	draw.polygon([(x, y) for x, y in prof1], fill = 1)
-	mask1 = np.array(img, dtype = bool).T
-	img.close()
-	img = Image.new("1", (w * rasterize_factor, h * rasterize_factor))
-	draw = ImageDraw.Draw(img)
-	prof2 = ((prof2 - [x0, y0]) * rasterize_factor).astype(int)
-	draw.polygon([(x, y) for x, y in prof2], fill = 1)
-	mask2 = np.array(img, dtype = bool).T
-	img.close()
 	
-	return 1 - (2*(mask1 & mask2).sum()) / (mask1.sum() + mask2.sum())
-
-def rotated_hamming_dist(prof1, axis1, thickness1, prof2, axis2, thickness2, rasterize_factor = 10, trim_by_thickness = True):
+	img = Image.new("1", (w * rasterize_factor, h * rasterize_factor))
+	draw = ImageDraw.Draw(img)
+	profile = ((profile - [x0, y0]) * rasterize_factor).astype(int)
+	draw.polygon([(x, y) for x, y in profile], fill = 0, outline = 1)
+	outline = np.argwhere(np.array(img, dtype = bool).T)
+	draw.polygon([(x, y) for x, y in profile], fill = 1, outline = 0)
+	profile_mask = clean_mask(np.array(img, dtype = bool).T)
+	img.close()
 	
 	collect = []
-	for prof, axis in [[prof1, axis1], [prof2, axis2]]:
+	for size in [3,5]:
+		collect.append(np.zeros((size,size), dtype = bool))
+		collect[-1][0] = True
+		collect[-1][-1] = True
+		collect[-1][:,0] = True
+		collect[-1][:,-1] = True
+		collect[-1] = np.argwhere(collect[-1])
+	around1 = collect[0] - 1
+	around2 = collect[1] - 2
+	
+	mask = skeletonize(profile_mask)
+	nodes = np.zeros(mask.shape, dtype = bool)
+	skelet = mask.copy()
+	for i, j in np.argwhere(mask):
+		ijs = around1 + [i,j]
+		ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < mask.shape).all(axis = 1)]
+		if mask[ijs[:,0], ijs[:,1]].sum() == 3:
+			ijs = around2 + [i,j]
+			if mask[ijs[:,0], ijs[:,1]].sum() == 3:
+				skelet[i,j] = False
+				nodes[i,j] = True
+	nodes = dilation(nodes, square(3))
+	skelet[nodes] = False
+	collect = set([])
+	for i, j in np.argwhere(nodes):
+		ijs = around1 + [i,j]
+		ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < skelet.shape).all(axis = 1)]
+		ijs = ijs[skelet[ijs[:,0], ijs[:,1]]]
+		for i, j in ijs:
+			collect.add((i, j))
+	endpoints = np.array(list(collect), dtype = int)
+	if not endpoints.size:
+		for i, j in np.argwhere(mask):
+			ijs = around1 + [i,j]
+			ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < mask.shape).all(axis = 1)]
+			if mask[ijs[:,0], ijs[:,1]].sum() == 1:
+				endpoints = np.array([[i,j]], dtype = int)
+				break
+	
+	paths = []
+	done = set([])
+	for i0, j0 in endpoints:
+		if (i0, j0) in done:
+			continue
+		path = [[i0,j0]]
+		i, j = path[-1]
+		while True:
+			done.add((i, j))
+			ijs = around1 + [i,j]
+			ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < skelet.shape).all(axis = 1)]
+			slice = ijs[skelet[ijs[:,0], ijs[:,1]]]
+			found = False
+			for i1, j1 in slice:
+				if (i1, j1) not in done:
+					path.append([i1, j1])
+					done.add((i1, j1))
+					found = True
+					break
+			if not found:
+				break
+			i, j = path[-1]
+		paths.append(path)
+	
+	paths = sorted(paths, key = lambda path: len(path))
+	
+	axis = np.array(paths.pop(), dtype = float)	
+	
+	if ((axis[-1] / rasterize_factor - [-x0, -y0])**2).sum() < ((axis[0] / rasterize_factor - [-x0, -y0])**2).sum():
+		axis = axis[::-1]
+	
+	d_max = rasterize_factor * 2
+	while paths:
+		path = paths.pop()
+		d1 = np.sqrt(((path[0] - axis[0])**2).sum())
+		d2 = np.sqrt(((path[0] - axis[-1])**2).sum())
+		d3 = np.sqrt(((path[-1] - axis[0])**2).sum())
+		d4 = np.sqrt(((path[-1] - axis[-1])**2).sum())
 		
-		x1, y1 = axis[np.argmin(axis[:,1])]
-		x2, y2 = axis[np.argmax(axis[:,1])]
-		slope = (y2 - y1) / (x2 - x1)
-		angle = np.arctan(slope)
-		
+		if (d1 < d_max) and (d3 > d_max):
+			axis = np.vstack((path[::-1], axis))
+		elif (d2 < d_max) and (d4 > d_max):
+			axis = np.vstack((axis, path))
+		elif (d3 < d_max) and (d1 > d_max):
+			axis = np.vstack((path, axis))
+		elif (d4 < d_max) and (d2 > d_max):
+			axis = np.vstack((axis, path[::-1]))
+	
+	d = cdist(axis, profile).min(axis = 1)
+	thickness = d * 2
+	thickness = thickness[thickness > thickness.max() / 2].mean()
+	d = cdist(axis, [profile[0], profile[-1]]).min(axis = 1)
+	axis = axis[d > thickness]
+	
+	d = cdist([axis[0]], axis)[0]
+	axis = axis[d > thickness / 2]
+	
+	axis = axis / rasterize_factor + [x0, y0]
+	
+	axis = smoothen_coords(axis)
+	
+	return axis
+
+def diameter_dist(axis1, radius1, axis2, radius2):
+	
+	axis1 = axis1 + [radius1, 0]
+	axis2 = axis2 + [radius2, 0]
+	ymax = min(axis1[:,1].max(), axis2[:,1].max())
+	axis1 = axis1[axis1[:,1] < ymax]
+	axis2 = axis2[axis2[:,1] < ymax]
+	d_sum = 0
+	d_norm = 0
+	for i in range(axis1.shape[0]):
+		j = np.argmin(np.abs(axis2[:,1] - axis1[i,1]))
+		r1 = axis1[i,0]
+		r2 = axis2[j,0]
+		if r1 > r2:
+			r1, r2 = r2, r1
+		d_sum += r1
+		d_norm += r2
+	for i in range(axis2.shape[0]):
+		j = np.argmin(np.abs(axis1[:,1] - axis2[i,1]))
+		r1 = axis2[i,0]
+		r2 = axis1[j,0]
+		if r1 > r2:
+			r1, r2 = r2, r1
+		d_sum += r1
+		d_norm += r2
+	return 1 - d_sum / d_norm
+
+def axis_dist(axis1, axis2):
+	
+	idx_max = min(axis1.shape[0], axis2.shape[0])
+	axis1 = axis1[:idx_max] - axis1[0]
+	axis2 = axis2[:idx_max] - axis2[0]
+	return (((axis1 - axis2)**2).sum(axis = 1)**0.5).sum() / (np.arange(idx_max)*2).sum()
+
+def find_keypoints(profile, rasterize_factor):
+	
+	[x0, y0], [x1, y1] = profile.min(axis = 0), profile.max(axis = 0)
+	x0, y0, x1, y1 = int(x0) - 1, int(y0) - 1, int(x1) + 1, int(y1) + 1
+	w, h = x1 - x0, y1 - y0
+	
+	img = Image.new("1", (w * rasterize_factor, h * rasterize_factor))
+	draw = ImageDraw.Draw(img)
+	profile_r = ((profile - [x0, y0]) * rasterize_factor).astype(int)
+	draw.polygon([(x, y) for x, y in profile_r], fill = 0, outline = 1)
+	outline = np.argwhere(np.array(img, dtype = bool).T)
+	draw.polygon([(x, y) for x, y in profile_r], fill = 1, outline = 0)
+	profile_mask = clean_mask(np.array(img, dtype = bool).T)
+	img.close()
+	
+	axis = np.argwhere(skeletonize(profile_mask)) / rasterize_factor + [x0, y0]
+	
+	d = cdist(axis, profile)
+	thickness = d.min(axis = 1) * 2
+	thickness = thickness[thickness > thickness.max() / 2].mean()
+	d = cdist(axis, [profile[0], profile[-1]]).min(axis = 1)
+	mask = (d > thickness)
+	if mask.any():
+		axis = axis[mask]
+	else:
+		axis = np.array([profile.mean(axis = 0)])
+	
+	d_axis_profile = cdist(axis, profile)
+	thickness = d_axis_profile.min(axis = 1) * 2
+	thickness = thickness[thickness > thickness.max() / 2].mean()
+	
+	length = np.sqrt((np.diff(profile, axis = 0) ** 2).sum(axis = 1)).sum() / 2
+	
+	step = min(thickness / 2, length * 0.05)
+	
+	d_profile = squareform(pdist(profile))
+	d_axis = squareform(pdist(axis))
+	d_profile[d_profile == 0] = np.inf
+	keypoints = np.zeros(axis.shape[0])
+	for i in range(profile.shape[0]):
+		idxs = np.where(d_profile[i] < step)[0]
+		if not idxs.size:
+			continue
+		i0 = idxs.min()
+		i1 = idxs.max()
+		if i0 >= i1:
+			continue
+		angle = np.arctan2(*(profile[i1] - profile[i0])[::-1])
 		if angle > 0:
 			angle = angle + np.pi
 		angle += np.pi / 2
-		prof = rotate_profile(prof, angle)
-		collect.append(prof - get_rim(prof))
-	prof1, prof2 = collect
+		segment = rotate_coords(profile[i0:i1], -angle).astype(float)
+		segment -= segment[0]
+		k = np.argmax(np.abs(segment[:,0]))
+		val = abs(segment[k,0])
+		
+		idx_profile = k + i0
+		idx_axis = np.argmin(d_axis_profile[:,idx_profile])
+		
+		idxs_axis = np.where(d_axis[idx_axis] < 4*step)
+		if val > keypoints[idxs_axis].max():
+			keypoints[idxs_axis] = 0
+			keypoints[idx_axis] = val
 	
-	if trim_by_thickness:
-		y_max = min(3*min(thickness1, thickness2), prof1[:,1].max(), prof2[:,1].max())
-	else:
-		y_max = min(prof1[:,1].max(), prof2[:,1].max())
-	prof1 = prof1[(prof1[:,1] < y_max)]
-	prof2 = prof2[(prof2[:,1] < y_max)]
+	keypoints = np.where(keypoints > 0)[0]
 	
-	idx_maxd = np.argmax(prof1[:,1])
-	rot_step = 0.016
-	while True:
-		prof_r = rotate_profile(prof1, rot_step)
-		dif = ((prof1[idx_maxd] - prof_r[idx_maxd])**2).sum()
-		if dif > 0.5:
-			rot_step *= 0.9
-		elif dif < 0.4:
-			rot_step *= 1.2
-		else:
-			break
-	
-	angle_min = -0.2
-	angle_max = 0.2
-	angle_opt = None
-	h_dist_min = np.inf
-	for angle in np.linspace(angle_min, angle_max, (angle_max - angle_min) / rot_step):
-		prof1_r = rotate_profile(prof1, angle)
-		prof1_r -= get_rim(prof1_r)
-		h_dist = hamming_dist(prof1_r, prof2, rasterize_factor = rasterize_factor)
-		if h_dist < h_dist_min:
-			h_dist_min = h_dist
-			angle_opt = angle
-	prof1 = rotate_profile(prof1, angle_opt)
-	prof1 -= get_rim(prof1)
-	
-	shifts1 = prof1[(prof1[:,1] == prof1[:,1].min())][:,0]
-	shifts2 = prof2[(prof2[:,1] == prof2[:,1].min())][:,0]
-	h_dist = np.inf
-	for shift1 in shifts1:
-		for shift2 in shifts2:
-			h_dist = min(h_dist, hamming_dist(prof1 - [shift1, 0], prof2 - [shift2, 0], rasterize_factor = rasterize_factor))
-	return h_dist
+	return axis[keypoints], thickness
 
-def axis_dist(axis1, axis2, axis_step):
+def frame_hamming_scaled(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor):
 	
-	axis1, xd1, yd1, length1 = axis1
-	axis2, xd2, yd2, length2 = axis2
+	def _make_mask(profile, keypoints, angle, scale, r_r, rasterize_factor):
+		
+		if angle != 0:
+			profile = rotate_coords(profile, angle)
+			keypoints = rotate_coords(keypoints, angle)
+		profile = np.round(profile * scale * rasterize_factor).astype(int)
+		keypoints = np.round(keypoints * scale * rasterize_factor).astype(int)
+		x0, y0 = profile.min(axis = 0) - 4*r_r
+		profile -= [x0, y0]
+		keypoints -= [x0, y0]
+		w, h = profile.max(axis = 0) + 4*r_r
+		img = Image.new("1", (w, h))
+		draw = ImageDraw.Draw(img)
+		draw.polygon([(x, y) for x, y in profile], fill = 1)
+		mask = np.array(img, dtype = bool).T
+		img.close()
+		return mask, keypoints
 	
-	break_len = 0
+	def _get_kp_mask(mask, keypoints, i, shift_x, shift_y, r_r, rasterize_factor):
+		
+		row, col = np.round(keypoints[i] - [shift_x * rasterize_factor, shift_y * rasterize_factor]).astype(int)
+		col0 = col - r_r
+		col1 = col0 + 2*r_r + 1
+		row0 = row - r_r
+		row1 = row0 + 2*r_r + 1
+		return mask[:,col0:col1][row0:row1]
 	
-	if length1 < length2:
-		axis_shorter = axis1
-		axis_longer = axis2
-		if xd1 is not None:
-			length = length2 - length1
-			break1 = np.linspace(0, length * axis_step, int(round(length / axis_step)))
-			break1 = np.vstack((break1*xd1, break1*yd1)).T + axis1[-1]
-			axis_shorter = np.vstack((axis_shorter, break1))
-			break_len = break1.shape[0]
+	r = int(round(r))
+	r_r = r * rasterize_factor
+	w = np.ones((2*r_r + 1, 2*r_r + 1), dtype = float)
+	ijs = np.argwhere(w > 0)
+	d = np.sqrt(((ijs - r_r)**2).sum(axis = 1))
+	d[d > r_r] = r_r
+	w[ijs[:,0], ijs[:,1]] = ((r_r - d) / r_r)**2
 	
-	elif length2 < length1:
-		axis_shorter = axis2
-		axis_longer = axis1
-		if xd2 is not None:
-			length = length1 - length2
-			break2 = np.linspace(0, length * axis_step, int(round(length / axis_step)))
-			break2 = np.vstack((break2*xd2, break2*yd2)).T + axis2[-1]
-			axis_shorter = np.vstack((axis2, break2))
-			break_len = break2.shape[0]
+	rot_step = 2*np.arcsin(1 / (2*r))
+	angle_min = -np.pi / 16
+	angle_max = np.pi / 16
+	angles = np.linspace(angle_min, angle_max, int(round((angle_max - angle_min) / rot_step)))
+	angles = angles[angles != 0]
+	angles = np.insert(angles, 0, 0)
 	
-	d_norm = np.abs(np.linspace(0, np.sqrt((axis_longer[-1]**2).sum()), axis_shorter.shape[0]) + np.linspace(0, np.sqrt((axis_shorter[-1]**2).sum()), axis_shorter.shape[0]))
-	if break_len > 0:
-		w = np.hstack((np.ones(axis_shorter.shape[0] - break_len), np.linspace(1, 0, break_len)))
-		w = w / w.sum()
-		d_norm = (d_norm * w).sum()
-	else:
-		d_norm = d_norm.mean()
-		w = np.ones(axis_shorter.shape[0]) / axis_shorter.shape[0]
-	d1 = cdist(axis_shorter, axis_longer).min(axis = 1)
-	d2 = cdist(axis_longer, axis_shorter).min(axis = 1)
+	scales = np.linspace(0.8, 1.2, 5)
+	scales = scales[scales != 1]
+	scales = np.insert(scales, 0, 1)
 	
-	d_norm2 = np.abs(np.linspace(0, np.sqrt((axis_shorter[-1]**2).sum()), axis_longer.shape[0]) + np.linspace(0, np.sqrt((axis_longer[-1]**2).sum()), axis_longer.shape[0])).mean()
-	d2_sum = 0
-	for pnt in axis_longer:
-		d = cdist([pnt], axis_shorter)[0]
-		idx = np.argmin(d)
-		d2_sum += d[idx] * w[idx]
+	shifts = []
+	for shift_x in range(-4, 5, 2):
+		for shift_y in range(-4, 5, 2):
+			if [shift_x, shift_y] == [0, 0]:
+				continue
+			shifts.append([shift_x, shift_y])
+	shifts = [[0,0]] + shifts
 	
-	return np.sqrt((((d1 * w).sum() / d_norm) + (d2_sum / d_norm2)) / 2)
+	h_dist_sum = 0
+	h_dist_norm = 0
+	d = cdist(keypoints1, keypoints2)
+	mask_m1, keypoints_m1 = _make_mask(profile1, keypoints1, 0, 1, r_r, rasterize_factor)
+	for i in range(keypoints1.shape[0]):
+		jj = np.where(d[i] < r)[0]
+		if not jj.size:
+			continue
+		mask1 = _get_kp_mask(mask_m1, keypoints_m1, i, 0, 0, r_r, rasterize_factor)
+		mask1_sum = w[mask1].sum()
+		h_dist_opt = np.inf
+		for angle in angles:
+			for scale in scales:
+				mask_m2, keypoints_m2 = _make_mask(profile2, keypoints2, angle, scale, r_r, rasterize_factor)
+				for j in jj:
+					for shift_x, shift_y in shifts:
+						mask2 = _get_kp_mask(mask_m2, keypoints_m2, j, shift_x, shift_y, r_r, rasterize_factor)
+						h_dist = 1 - (2*w[mask1 & mask2].sum()) / (mask1_sum + w[mask2].sum())
+						if h_dist < h_dist_opt:
+							h_dist_opt = h_dist
+		
+		if h_dist_opt < np.inf:
+			h_dist_sum += h_dist_opt**2
+			h_dist_norm += 1
+	
+	return h_dist_sum, h_dist_norm
 
-def arc_length(profile):
+def frame_hamming(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor):
 	
-	dx = np.gradient(profile[:,0])
-	dy = np.gradient(profile[:,1])
-	s = np.cumsum(np.sqrt(dx**2 + dy**2))
-	s -= s[np.argmin(cdist([get_rim(profile)], profile)[0])]
-	return s
+	def _make_mask(profile, keypoints, angle, r_r, rasterize_factor):
+		
+		if angle != 0:
+			profile = rotate_coords(profile, angle)
+			keypoints = rotate_coords(keypoints, angle)
+		profile = np.round(profile * rasterize_factor).astype(int)
+		keypoints = np.round(keypoints * rasterize_factor).astype(int)
+		x0, y0 = profile.min(axis = 0) - 4*r_r
+		profile -= [x0, y0]
+		keypoints -= [x0, y0]
+		w, h = profile.max(axis = 0) + 4*r_r
+		img = Image.new("1", (w, h))
+		draw = ImageDraw.Draw(img)
+		draw.polygon([(x, y) for x, y in profile], fill = 1)
+		mask = np.array(img, dtype = bool).T
+		img.close()
+		return mask, keypoints
+	
+	def _get_kp_mask(mask, keypoints, i, shift_x, shift_y, r_r, rasterize_factor):
+		
+		row, col = np.round(keypoints[i] - [shift_x * rasterize_factor, shift_y * rasterize_factor]).astype(int)
+		col0 = col - r_r
+		col1 = col0 + 2*r_r + 1
+		row0 = row - r_r
+		row1 = row0 + 2*r_r + 1
+		return mask[:,col0:col1][row0:row1]
+	
+	r = int(round(r))
+	r_r = r * rasterize_factor
+	w = np.ones((2*r_r + 1, 2*r_r + 1), dtype = float)
+	ijs = np.argwhere(w > 0)
+	d = np.sqrt(((ijs - r_r)**2).sum(axis = 1))
+	d[d > r_r] = r_r
+	w[ijs[:,0], ijs[:,1]] = ((r_r - d) / r_r)**2
+	
+	rot_step = 2*np.arcsin(1 / (2*r))
+	angle_min = -np.pi / 8
+	angle_max = np.pi / 8
+	angles = np.linspace(angle_min, angle_max, int(round((angle_max - angle_min) / rot_step)))
+	angles = angles[angles != 0]
+	angles = np.insert(angles, 0, 0)
+	
+	shifts = []
+	for shift_x in range(-4, 5, 2):
+		for shift_y in range(-4, 5, 2):
+			if [shift_x, shift_y] == [0, 0]:
+				continue
+			shifts.append([shift_x, shift_y])
+	shifts = [[0,0]] + shifts
+	
+	h_dist_sum = 0
+	h_dist_norm = 0
+	d = cdist(keypoints1, keypoints2)
+	mask_m1, keypoints_m1 = _make_mask(profile1, keypoints1, 0, r_r, rasterize_factor)
+	for i in range(keypoints1.shape[0]):
+		jj = np.where(d[i] < 2*r)[0]
+		if not jj.size:
+			continue
+		mask1 = _get_kp_mask(mask_m1, keypoints_m1, i, 0, 0, r_r, rasterize_factor)
+		mask1_sum = w[mask1].sum()
+		h_dist_opt = np.inf
+		for angle in angles:
+			mask_m2, keypoints_m2 = _make_mask(profile2, keypoints2, angle, r_r, rasterize_factor)
+			for j in jj:
+				for shift_x, shift_y in shifts:
+					mask2 = _get_kp_mask(mask_m2, keypoints_m2, j, shift_x, shift_y, r_r, rasterize_factor)
+					h_dist = 1 - (2*w[mask1 & mask2].sum()) / (mask1_sum + w[mask2].sum())
+					if h_dist < h_dist_opt:
+						h_dist_opt = h_dist
+		
+		if h_dist_opt < np.inf:
+			h_dist_sum += h_dist_opt**2
+			h_dist_norm += 1
+	
+	return h_dist_sum, h_dist_norm
 
-def tangent(profile):
+def dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax):
 	
-	dx = np.gradient(profile[:,0])
-	dy = np.gradient(profile[:,1])
-	th = np.zeros(profile.shape[0])
-	mask = (dx != 0)
-	th[mask] = (dy[mask] / dx[mask])
-	return th
-
-def fftsmooth(profile, threshold = 0.2, params = None):
-	
-	if profile.shape[0] < 5:
-		return profile
-	
-	# extend profile at break point by 100 mm if params are available
-	if params:
-		_, _, xd, yd = params
-		step = 0.1
-		line = np.vstack((xd * np.arange(0, 100, step), yd * np.arange(0, 100, step))).T
-		profile = np.vstack((profile[0] + line[::-1], profile, profile[-1] + line))
-	
-	# make sure profile line is closed
-	pnt0 = (profile[0] + profile[-1]) / 2
-	profile = np.vstack(([pnt0], profile, [pnt0]))
-	
-	fft = np.fft.fft2(profile)
-	freq = np.abs(np.fft.fftfreq(profile.shape[0]))
-	fft[np.abs(freq) > threshold] = 0
-	profile = np.fft.ifft2(fft)[1:-1].real
-	
-	if params:
-		profile = profile[line.shape[0]:-line.shape[0]]
-	
-	return profile
-
-def interpolate_signal(s, signal, s_min, s_max, resolution = 0.1):
-	
-	xs = np.arange(s_min, s_max + resolution, resolution)
-	return xs, np.interp(xs, s, signal)
-
-def radius_dist(prof1, prof2):
-	
-	R1 = prof1[:,0]
-	R2 = prof2[:,0]
-	s1 = arc_length(prof1)
-	s2 = arc_length(prof2)
-	s_min, s_max = max(s1.min(), s2.min()), min(s1.max(), s2.max())
-	mask1 = (s1 >= s_min) & (s1 <= s_max)
-	mask2 = (s2 >= s_min) & (s2 <= s_max)
-	
-	s1 = s1[mask1]
-	xs1, R1 = interpolate_signal(s1, R1[mask1], s_min, s_max)
-	s2 = s2[mask2]
-	xs2, R2 = interpolate_signal(s2, R2[mask2], s_min, s_max)
-	R_dist = np.sqrt(((R1 - R2)**2).sum() / (s_max - s_min))
-	
-	return R_dist
-
-def dist_worker_alt(ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures):
-	
-	profiles_n = len(profiles)
+	rasterize_factor = 4
+	profiles_n = len(data)
 	distance = np.zeros((profiles_n, profiles_n, 3), dtype = float) - 2
-	cnt_last = 0
-	cnt = 0
 	while True:
 		try:
 			i, j = ijs_mp.pop()
 		except:
 			break
-		cnt += 1
-		if cnt - cnt_last > 100:
-			print("\rcombs left: %d                       " % (len(ijs_mp)), end = "")
-			cnt_last = cnt
+		cnt = cmax - len(ijs_mp)
+		print("\rprocessing {:d}/{:d} ({:%})          ".format(cnt, cmax, cnt / cmax), end = "")
 		
-		profile1, _, radius1, _, _ = profiles[sample_ids[i]]
-		profile2, _, radius2, _, _ = profiles[sample_ids[j]]
+		profile1, axis1, radius1, keypoints1, thickness1 = data[sample_ids[i]]
+		profile2, axis2, radius2, keypoints2, thickness2 = data[sample_ids[j]]
 		
-		R_dist = np.inf
-		shifts1 = profile1[(profile1[:,1] == profile1[:,1].min())][:,0]
-		shifts2 = profile2[(profile2[:,1] == profile2[:,1].min())][:,0]
-		for shift1 in shifts1:
-			for shift2 in shifts2:		
-				R_dist = min(R_dist, radius_dist(profile1 - [shift1, 0] + [radius1, 0], profile2 - [shift2, 0] + [radius2, 0]))
+		r = 2*max(thickness1, thickness2)
 		
-		# shape distances
-		s1 = arc_lengths[sample_ids[i]].copy()
-		s2 = arc_lengths[sample_ids[j]].copy()
-		th1 = tangents[sample_ids[i]].copy()
-		th2 = tangents[sample_ids[j]].copy()
-		kap1 = curvatures[sample_ids[i]].copy()
-		kap2 = curvatures[sample_ids[j]].copy()
+		diam_dist = diameter_dist(axis1, radius1, axis2, radius2)
+		ax_dist = axis_dist(axis1, axis2)
 		
-		s_min, s_max = max(s1.min(), s2.min()), min(s1.max(), s2.max())
-		mask1 = (s1 >= s_min) & (s1 <= s_max)
-		mask2 = (s2 >= s_min) & (s2 <= s_max)
-		
-		s1 = s1[mask1]
-		_, th1 = interpolate_signal(s1, th1[mask1], s_min, s_max)
-		_, kap1 = interpolate_signal(s1, kap1[mask1], s_min, s_max)
-		
-		s2 = s2[mask2]
-		_, th2 = interpolate_signal(s2, th2[mask2], s_min, s_max)
-		_, kap2 = interpolate_signal(s2, kap2[mask2], s_min, s_max)
-		
-		th_dist = np.sqrt(((th1 - th2)**2).sum() / (s_max - s_min))
-		kap_dist = np.sqrt(((kap1 - kap2)**2).sum() / (s_max - s_min))
-
-		distance[i, j, 0] = R_dist
-		distance[i, j, 1] = th_dist
-		distance[i, j, 2] = kap_dist
-		
-		distance[j, i, 0] = R_dist
-		distance[j, i, 1] = th_dist
-		distance[j, i, 2] = kap_dist
-		
-	collect_mp.append(distance)
-
-def calc_distances_alt(profiles):
-	# profiles[sample_id] = [profile, bottom, radius, thickness, params]
-	
-	profiles_n = len(profiles)
-	sample_ids = list(profiles.keys())
-	
-	arc_lengths = {}
-	tangents = {}
-	curvatures = {}
-	for sample_id in profiles:
-		profile, bottom, radius, _, _ = profiles[sample_id]
-		
-		# calculate arc_length, tangent, curvature
-		prof = profile + [radius, 0]
-		arc_lengths[sample_id] = arc_length(prof)
-		tangents[sample_id] = tangent(prof)
-		curvatures[sample_id] = np.gradient(tangents[sample_id])
-		
-	manager = mp.Manager()
-	ijs_mp = manager.list(list(combinations(range(profiles_n), 2)))
-	collect_mp = manager.list()
-	
-	procs = []
-	for pi in range(mp.cpu_count()):
-		procs.append(mp.Process(target = dist_worker_alt, args = (ijs_mp, collect_mp, profiles, sample_ids, arc_lengths, tangents, curvatures)))
-		procs[-1].start()
-	for proc in procs:
-		proc.join()
-	for proc in procs:
-		proc.terminate()
-		proc = None
-	
-	distance = np.ones((profiles_n, profiles_n, 3), dtype = float) # distance[i, j] = [R_dist, th_dist, kap_dist], ; where i, j = indices in sample_ids; R_dist, th_dist, kap_dist = components of morphometric distance
-	for i in range(profiles_n):
-		distance[i,i,:] = 0
-	
-	for dist in collect_mp:
-		mask = (dist != -2)
-		distance[mask] = dist[mask]
-	
-	return distance
-
-def dist_worker(ijs_mp, collect_mp, profiles, sample_ids, thicknesses, axes, axis_step):
-	
-	profiles_n = len(profiles)
-	distance = np.zeros((profiles_n, profiles_n, 5), dtype = float) - 2
-	cnt_last = 0
-	cnt = 0
-	while True:
-		try:
-			i, j = ijs_mp.pop()
-		except:
-			break
-		cnt += 1
-		if cnt - cnt_last > 100:
-			print("\rcombs left: %d                       " % (len(ijs_mp)), end = "")
-			cnt_last = cnt
-		
-		profile1, _, radius1, _, _ = profiles[sample_ids[i]]
-		profile2, _, radius2, _, _ = profiles[sample_ids[j]]
-		
-		diam_dist = diameter_dist(radius1, radius2)
-		thick_dist = thickness_dist(thicknesses[sample_ids[i]], thicknesses[sample_ids[j]])
-		ax_dist = axis_dist(axes[sample_ids[i]], axes[sample_ids[j]], axis_step)
-		h_dist = rotated_hamming_dist(profile1, axes[sample_ids[i]][0], 0, profile2, axes[sample_ids[j]][0], 0, trim_by_thickness = False)
-		ht_dist = rotated_hamming_dist(profile1, axes[sample_ids[i]][0], thicknesses[sample_ids[i]], profile2, axes[sample_ids[j]][0], thicknesses[sample_ids[j]], trim_by_thickness = True)
+		h_dist_sum1, h_dist_norm1 = frame_hamming(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
+		h_dist_sum2, h_dist_norm2 = frame_hamming(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
+		h_dist = np.sqrt((h_dist_sum1 + h_dist_sum2) / (h_dist_norm1 + h_dist_norm2))
 		
 		distance[i, j, 0] = diam_dist
-		distance[i, j, 1] = thick_dist
-		distance[i, j, 2] = ax_dist
-		distance[i, j, 3] = h_dist
-		distance[i, j, 4] = ht_dist
+		distance[i, j, 1] = ax_dist
+		distance[i, j, 2] = h_dist
 		
 		distance[j, i, 0] = diam_dist
-		distance[j, i, 1] = thick_dist
-		distance[j, i, 2] = ax_dist
-		distance[j, i, 3] = h_dist
-		distance[j, i, 4] = ht_dist
+		distance[j, i, 1] = ax_dist
+		distance[j, i, 2] = h_dist
 		
 	collect_mp.append(distance)
 	
-def calc_distances(profiles):
-	# profiles[sample_id] = [profile, bottom, radius, thickness, params]
+def calc_distances(profiles, distance = None):
+	# profiles[sample_id] = [profile, radius]
+	# returns distance[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	
-	axis_step = 0.5
+	rasterize_factor = 10
 	
 	profiles_n = len(profiles)
 	sample_ids = list(profiles.keys())
 	
-	axes = {}  # {sample_id: [axis, xd, yd], ...}
-	thicknesses = {} # {sample_id: thickness, ...}
-	for sample_id in profiles:
-		profile, bottom, radius, thickness, params = profiles[sample_id]
-		
-		thicknesses[sample_id] = thickness
-		
-		# calculate axis
-		axis = profile_axis(profile, params, step = axis_step, inner_weight = 0.5)
-#		if bottom:
-#			mask = (axis[:,1] < profile[:,1].max() - thickness)
-#			if mask.any():
-#				axis = axis[mask]
-		length = np.sqrt((axis[-1]**2).sum())
-		xd, yd = None, None
-		if params:
-			_, _, xd, yd = params
-		axes[sample_id] = [axis, xd, yd, length]
-		
 	manager = mp.Manager()
-	ijs_mp = manager.list(list(combinations(range(profiles_n), 2)))
-	collect_mp = manager.list()
+	if distance is None:
+		distance = np.ones((profiles_n, profiles_n, 3), dtype = float)
+		ijs_mp = manager.list(list(combinations(range(profiles_n), 2)))
+	else:
+		ijs = []
+		for i, j in combinations(range(profiles_n), 2):
+			if (distance[i,j] == np.inf).any():
+				ijs.append([i,j])
+		if not ijs:
+			return distance
+		ijs_mp = manager.list(ijs)
 	
+	data = {} # {sample_id: [profile, axis, radius, keypoints, thickness], ...}
+	cmax = len(profiles)
+	cnt = 1
+	for sample_id in profiles:
+		print("\rpreparing data {:0.0%}".format(cnt / cmax), end = "")
+		cnt += 1
+		profile, radius = profiles[sample_id]
+		axis = profile_axis(profile, rasterize_factor)
+		axis = axis - axis[0]
+		keypoints, thickness = find_keypoints(profile, rasterize_factor)
+		data[sample_id] = [profile, axis, radius, keypoints, thickness]
+	collect_mp = manager.list()
+	cmax = len(ijs_mp)
 	procs = []
 	for pi in range(mp.cpu_count()):
-		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, profiles, sample_ids, thicknesses, axes, axis_step)))
+		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids, cmax)))
 		procs[-1].start()
 	for proc in procs:
 		proc.join()
@@ -467,7 +536,7 @@ def calc_distances(profiles):
 		proc.terminate()
 		proc = None
 	
-	distance = np.ones((profiles_n, profiles_n, 5), dtype = float) # distance[i, j] = [diam_dist, thick_dist, ax_dist, h_dist, ht_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# distance[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	for i in range(profiles_n):
 		distance[i,i,:] = 0
 	
@@ -491,53 +560,23 @@ def calc_pca_scores(D, n_components = None):
 	pca.fit(D)
 	return pca.transform(D)
 
-def calc_mode(D):
-	
-	d = D.flatten()
-	if d.shape[0] == 1:
-		return d[0]
-	d = d[d > 0]
-	return stats.mode(np.round(d, 3))[0][0]
-
-def combine_dists(distance, weights):
-	# weights = [w_dist1, w_dist2, w_dist3]
-	# distance[i, j] = [dist1, dist2, dist3]; where i, j = indices in sample_ids; dist1, dist2, dist3 = components of morphometric distance
-	
-	combined = np.ones(distance.shape[:2])
-	
-	w_sum = sum(weights)
-	if w_sum == 0:
-		weights = [1/6] * len(weights)
-	else:
-		weights = [w / w_sum for w in weights]
-	
-	dists = [None] * 3
-	for idx in range(3):
-		dists[idx] = distance[:,:,idx]
-	
-	combined = dists[0] * weights[0] + dists[1] * weights[1] + dists[2] * weights[2]
-	
-	for i in range(combined.shape[0]):
-		combined[i,i] = 0
-	
-	return combined
-
-def get_distmax_ordering(pca_scores, D):
+def get_distmax_ordering(distance):
 	# orders samples so that the the next one has the highest possible distance to the most similar of the previous samples
 	# (ensures that the samples at the beginning of the sequence are the most diverse)
 	# returns {sample_idx: order, ...}
 	
 	# start with the profile most disstant from the centroid of the assemblage
-	idx0 = np.argmax(((pca_scores - pca_scores.mean(axis = 0))**2).sum(axis = 1))
+	idx0 = sorted(np.unique(np.argwhere(distance == distance.max())).tolist(), key = lambda i: distance[i].mean())[-1]
 	idxs_done = [idx0]
 	data = {} # {sample_idx: order, ...}
 	i = 0
 	data[idx0] = i
-	idxs_todo = [idx for idx in range(D.shape[0]) if idx != idx0]
+	idxs_todo = [idx for idx in range(distance.shape[0]) if idx != idx0]
 	while idxs_todo:
 		i += 1
-		idx1 = idxs_todo[np.argmax((D[:,idxs_todo][idxs_done]).min(axis = 0))]
-		d = D[idxs_done,idx1].min()
+		d = distance[:,idxs_todo][idxs_done]
+		d_todo = d.max(axis = 0)
+		idx1 = idxs_todo[sorted(np.where(d_todo == d_todo.max())[0].tolist(), key = lambda idx: d[:,idx].mean())[-1]]
 		data[idx1] = i
 		idxs_done.append(idx1)
 		idxs_todo.remove(idx1)
@@ -581,154 +620,120 @@ def get_sample_labels(distance):
 	
 	return sample_labels
 
-def calc_ssd(pca_scores):
-	# calculate sum of squared distances
+def get_clusters(D, limit = 0.68, hierarchical_labels = True):
+	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# returns clusters = {label: [i, ...], ...}; i = index in sample_ids
 	
-	return (((pca_scores - pca_scores.mean(axis = 0))**2).sum(axis = 1)).sum()
-
-def get_2_clusters(pca_scores):
-	
-	if pca_scores.shape[0] <= 2:
-		return [np.array([i], dtype = int) for i in range(pca_scores.shape[0])], 1.0
-	clusters_l, _ = vq(pca_scores, kmeans(pca_scores, 2)[0])
-	labels = np.unique(clusters_l)
-	clusters = []
-	for label in labels:
-		clusters.append(np.where(clusters_l == label)[0].astype(int))
-	if len(clusters) != 2:
-		return clusters, 1.0
-	ssd_samples = calc_ssd(pca_scores)
-	ssd_clusters = 0
-	for cluster in clusters:
-		if len(cluster) < 2:
-			pass
-		else:
-			ssd_clusters += calc_ssd(pca_scores[cluster])
-	ci = ssd_clusters / ssd_samples
-	return clusters, ci
-
-def get_ci_mp(params):
-	
-	weights, D_samples = params
-	_, ci = get_2_clusters(calc_pca_scores(combine_dists(D_samples, weights)))
-	return ci
-
-def get_cis_sp(weights, D_samples):
-	
-	cis = []
-	for weights_case in weights:
-		_, ci = get_2_clusters(calc_pca_scores(combine_dists(D_samples, weights_case)))
-		cis.append(ci)
-	return np.array(cis)
-
-def split_cluster(D, samples, weights, pool):
-	# returns [cluster, ...]
-	
-	if len(samples) <= 2:
-		return [np.array([idx], dtype = int) for idx in samples], 1.0
-	
-	D_samples = D[:,samples][samples]
-	if len(samples) > 100:
-		cis = np.array(pool.map(get_ci_mp, ([weights_case, D_samples] for weights_case in weights)))
-	else:
-		cis = get_cis_sp(weights, D_samples)
-	
-	weights_case = weights[np.argmin(cis)]
-	pca_scores = calc_pca_scores(combine_dists(D[:,samples][samples], weights_case))
-	clusters, ci_obs = get_2_clusters(pca_scores)
-	
-	samples = np.array(samples, dtype = int)
-	return [samples[cluster] for cluster in clusters], weights_case, ci_obs
-	
-def get_auto_clusters(D, limits = None):
-	
-	def _get_max_cube_idx(same):
+	def _calc_dist(cluster, D, limit = None):
 		
-		for idx in range(same.shape[0]):
-			if not same[:,:idx][:idx].all():
-				return max(0, idx - 1)
-		return idx
+		d = D[:,cluster][cluster]
+		if (limit is not None) and (d.max() > limit):
+			return np.inf
+		return d.mean()
 	
-	def _get_max_cluster(same, samples, pca_1):
-		
-		same = same[:,samples][samples]
-		if same.all():
-			return samples
-		
-		try:
-			pca_1.fit(~same)
-		except:
-			print("Warning! PCA error. Matrix:")
-			print(same.astype(int))
-			return samples
-		order1 = np.argsort(pca_1.transform(~same)[:,0])
-		order2 = order1[::-1]
-		same1 = same[:,order1][order1]
-		same2 = same[:,order2][order2]
-		idx1 = _get_max_cube_idx(same1)
-		idx2 = _get_max_cube_idx(same2)
-		if idx1 > idx2:
-			return samples[order1[:idx1]]
-		else:
-			return samples[order2[:idx2]]
+	mask = (D == 0)
+	mins = []
+	for idx in range(D.shape[2]):
+		d = D[:,:,idx]
+		mins.append(d[d > 0].min())
+	D = D - mins
+	D[mask] = 0
+	D = D / D.mean(axis = (0,1))
 	
-	def _get_clusters_pure(same):
-		
-		samples = np.arange(same.shape[0], dtype = int)
-		
-		# succesively collect clusters by finding the largest first, than the largest from the remaining samples etc.
-		# i.e. collect the samples into clusters that don't overlap maximizing the average size of the clusters
-		clusters = []
-		pca_1 = PCA(n_components = 1)
-		while samples.size:
-			cluster = _get_max_cluster(same, samples, pca_1)
-			clusters.append(cluster)
-			samples = np.setdiff1d(samples, cluster)
-		order_idxs = np.argsort([len(cluster) for cluster in clusters])[::-1]
-		clusters = [sorted(clusters[ci], key = lambda idx: order_idxs[ci])[::-1] for ci in order_idxs]
-		
-		clusters = dict([(str(i + 1), cluster) for i, cluster in enumerate(clusters)])
-		return clusters
+	limit = D.mean() * limit
 	
-	if limits is None:
-		limits = []
-		for di in range(D.shape[2]):
-			limits.append(calc_mode(D[:,:,di]))
-	D = D / limits
-	same = (D < 1).all(axis = 2)
-	clusters = _get_clusters_pure(same)
+	clusters = dict([[i, [i]] for i in range(D.shape[0])])
+	
+	d_comb = np.zeros((len(clusters), len(clusters)), dtype = float) + np.inf
+	for c1, c2 in combinations(list(clusters.keys()), 2):
+		d_comb[c1,c2] = _calc_dist(clusters[c1] + clusters[c2], D, limit)
+		d_comb[c2,c1] = d_comb[c1,c2]
+	
+	cmax = np.prod(d_comb.shape)
+	cnt_last = 0
+	
+	while True:
+		c1, c2 = np.argwhere(d_comb == d_comb.min())[0]
+		if d_comb[c1,c2] == np.inf:
+			break
+		
+		cnt = (d_comb == np.inf).sum()
+		if cnt - cnt_last > 10:
+			print("\rclustering {:0.0%} {:d}       ".format(cnt / cmax, len(clusters)), end = "")
+			cnt_last = cnt
+		
+		d_comb[c1,c2] = np.inf
+		d_comb[c2,c1] = np.inf
+		clusters[c1] = clusters[c1] + clusters[c2]
+		del clusters[c2]
+		d_comb[c2] = np.inf
+		d_comb[:,c2] = np.inf
+		for c2 in clusters:
+			if (c2 == c1):
+				continue
+			d_comb[c1,c2] = _calc_dist(clusters[c1] + clusters[c2], D, limit)
+			d_comb[c2,c1] = d_comb[c1,c2]
+	
+	if not hierarchical_labels:
+		return dict([(str(ci), clusters[label]) for ci, label in enumerate(list(clusters.keys()))])
+	
+	# hierarchically label clusters
+	
+	clusters2 = {}
 	collect = {}
-	singles = []
-	outliers = []
-	for label in clusters:
-		if len(clusters[label]) < 2:
-			singles += clusters[label]
-			outliers += clusters[label]
-			continue
-		collect[label] = clusters[label].copy()
+	for ci, label in enumerate(list(clusters.keys())):
+		clusters2[ci] = clusters[label].copy()
+		collect[ci] = clusters[label].copy()
 	clusters = collect
-	labels = list(clusters.keys())
-	keep = []
-	to_add = []
-	for idx in singles:
-		rs = np.array([np.sqrt((D[idx,clusters[label]]**2).sum(axis = 1)).mean() for label in labels])
-		r_min = rs.min()
-		if r_min < 2:
-			idxs_labels = np.where(rs == r_min)[0].tolist()
-			label = labels[sorted(idxs_labels, key = lambda idx_label: len(clusters[labels[idx_label]]))[::-1][0]]
-			to_add.append([label, idx])
-		else:
-			keep.append(idx)
-	for label, idx in to_add:
-		clusters[label] = np.hstack((clusters[label], [idx]))
-	if keep:
-		clusters["singles"] = np.array(keep, dtype = int)
 	
-	weights = {} # {label: limits, ...}
-	collect = {}  # {sample_idx: label, ...}
-	for label in clusters:
-		weights[label] = limits[:3]  # DEBUG
-		for sample_idx in clusters[label]:
-			collect[sample_idx] = label
-	return collect, outliers, weights
+	d_comb = np.zeros((len(clusters2), len(clusters2)), dtype = float) + np.inf
+	for c1, c2 in combinations(list(clusters2.keys()), 2):
+		d_comb[c1,c2] = _calc_dist(clusters2[c1] + clusters2[c2], D)
+		d_comb[c2,c1] = d_comb[c1,c2]
+	
+	joins = []
+	cmax = np.prod(d_comb.shape)
+	cnt_last = 0
+	while True:
+		c1, c2 = np.argwhere(d_comb == d_comb.min())[0]
+		if d_comb[c1,c2] == np.inf:
+			break
+		cnt = (d_comb == np.inf).sum()
+		print("\rlabeling {:0.0%} {:d}         ".format(cnt / cmax, len(clusters2)), end = "")
+		d_comb[c1,c2] = np.inf
+		d_comb[c2,c1] = np.inf
+		clusters2[c1] = clusters2[c1] + clusters2[c2]
+		joins.append([c1, c2])
+		del clusters2[c2]
+		d_comb[c2] = np.inf
+		d_comb[:,c2] = np.inf
+		for c2 in clusters2:
+			if (c2 == c1):
+				continue
+			d_comb[c1,c2] = _calc_dist(clusters2[c1] + clusters2[c2], D)
+			d_comb[c2,c1] = d_comb[c1,c2]
+	
+	labels_dict = {}
+	label = len(joins) + 1
+	for cis in joins:
+		for ci in cis:
+			if ci not in labels_dict:
+				labels_dict[ci] = [str(label)]
+				label += 1
+	for ci in clusters:
+		if ci not in labels_dict:
+			labels_dict[ci] = [str(label)]
+			label += 1
+	z = 1
+	for c1, c2 in joins[::-1]:
+		label = str(z)
+		labels_dict[c1] = [label] + labels_dict[c1]
+		labels_dict[c2] = labels_dict[c1][:-1] + labels_dict[c2]
+		z += 1
+	for ci in clusters:
+		labels_dict[ci] = ".".join(labels_dict[ci][:-2][::-1] + [labels_dict[ci][-1]])
+		
+	clusters = dict([[labels_dict[ci], clusters[ci]] for ci in clusters])
+	
+	return clusters
 

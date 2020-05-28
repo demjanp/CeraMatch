@@ -57,14 +57,14 @@ class TableModel(QtCore.QAbstractTableModel):
 		if role == QtCore.Qt.BackgroundRole:
 			label = self.model.samples[index.column()].label
 			level = index.row() + 1
-			if isinstance(label, dict) and (level in label): # label = {clustering_level: color, ...}
-				return label[level]
+			if isinstance(label, dict) and (level in label["table"]): # label = {clustering_level: color, ...}
+				return label["table"][level]
 			return QtGui.QColor(QtCore.Qt.white)
 			
 		if role == QtCore.Qt.DecorationRole:
 			label = self.model.samples[index.column()].label
 			level = index.row() + 1
-			if isinstance(label, dict) and (level in label):
+			if isinstance(label, dict) and (level in label["table"]):
 				return self.icons[index.column()]
 			return self.empty_icon
 			

@@ -1,2 +1,2 @@
 # CeraMatch
-Visual shape-matching of ceramics profiles
+Shape matching and clustering of ceramic shapes

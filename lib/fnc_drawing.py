@@ -12,8 +12,10 @@ def save_clusters_as_pdf(tgt_path, samples):
 		clusters[sample.cluster].append(sample)
 	if not clusters:
 		return
-	for cluster in clusters:
-		clusters[cluster] = natsorted(clusters[cluster], key = lambda sample: sample.leaf)
+	collect = {}
+	for cluster in natsorted(clusters.keys()):
+		collect[cluster] = natsorted(clusters[cluster], key = lambda sample: sample.id)
+	clusters = collect
 	
 	renderer = QtSvg.QSvgRenderer()
 	w_src_max = 0
@@ -47,9 +49,10 @@ def save_clusters_as_pdf(tgt_path, samples):
 	font.setPointSize(36)
 	td.setDefaultFont(font)
 	
-	def new_page(printer, td, painter, cluster, page):
+	def init_page(printer, td, painter, cluster, page, new_page):
 		
-		printer.newPage()
+		if new_page:
+			printer.newPage()
 		td.setHtml("Cluster: %s, Page: %s" % (cluster, page))
 		td.drawContents(painter)
 		return td.size().height()
@@ -61,10 +64,10 @@ def save_clusters_as_pdf(tgt_path, samples):
 		h_max_row = 0
 		page = 1
 		
-		y = new_page(printer, td, painter, cluster, page)
+		y = init_page(printer, td, painter, cluster, page, cnt > 0)
 		
 		for sample in clusters[cluster]:
-			print("\rgen. pdf %d/%d            " % (cnt, cmax), end = "")
+			print("\rgen. pdf %d/%d            " % (cnt + 1, cmax), end = "")
 			cnt += 1
 			
 			src_path = as_path(sample.resource.value, check_if_exists = False)
@@ -82,7 +85,7 @@ def save_clusters_as_pdf(tgt_path, samples):
 			if y + h_max_row > h_max:
 				x = 0
 				page += 1
-				y = new_page(printer, td, painter, cluster, page)
+				y = init_page(printer, td, painter, cluster, page, True)
 			
 			renderer.render(painter, QtCore.QRectF(x, y, w, h))
 			x += w
