@@ -7,6 +7,7 @@ from lib.ToolBar import (ToolBar)
 from lib.StatusBar import (StatusBar)
 from lib.Button import (Button)
 
+from deposit.commander.Registry import (Registry)
 from deposit.DModule import (DModule)
 from deposit import Broadcasts
 
@@ -22,7 +23,7 @@ class View(DModule, QtWidgets.QMainWindow):
 	def __init__(self):
 		
 		self.model = None
-		self.registry_dc = None
+		self.registry = None
 		self.mode = None
 		self._loaded = False
 		
@@ -44,6 +45,7 @@ class View(DModule, QtWidgets.QMainWindow):
 		
 		self.central_widget.layout().addWidget(self.splitter)
 		
+		self.registry = Registry("Deposit")
 		self.image_view = ImageView(self)
 		self.footer_frame = FooterFrame(self)
 		self.cluster_group = ClusterGroup(self)
@@ -97,11 +99,11 @@ class View(DModule, QtWidgets.QMainWindow):
 		
 		self.connect_broadcast(Broadcasts.VIEW_ACTION, self.on_update)
 		self.connect_broadcast(Broadcasts.STORE_LOCAL_FOLDER_CHANGED, self.on_update)
+		self.connect_broadcast(Broadcasts.STORE_SAVED, self.on_update)
+		self.connect_broadcast(Broadcasts.STORE_LOADED, self.on_update)
 		self.connect_broadcast(Broadcasts.STORE_DATA_SOURCE_CHANGED, self.on_update)
 		self.connect_broadcast(Broadcasts.STORE_DATA_CHANGED, self.on_update)
-		self.connect_broadcast(Broadcasts.STORE_SAVED, self.on_update)
-		self.connect_broadcast(Broadcasts.STORE_LOADED, self.on_loaded)
-	
+		
 	def get_selected(self):
 		# returns [[sample_id, DResource, label, value, index], ...]
 		
@@ -140,7 +142,7 @@ class View(DModule, QtWidgets.QMainWindow):
 		
 		self.update()
 	
-	def on_loaded(self, *args):
+	def on_set_datasource(self, *args):
 		
 		self.model.load_samples()
 		self.update()
@@ -278,6 +280,10 @@ class View(DModule, QtWidgets.QMainWindow):
 	def on_zoom(self, value):
 		
 		self.image_view.set_thumbnail_size(value)
+	
+	def on_drop(self, src_id, tgt_id):
+		
+		print("drop", src_id, tgt_id)  # DEBUG
 	
 	def closeEvent(self, event):
 		

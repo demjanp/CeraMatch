@@ -6,6 +6,8 @@ distmax - try sort using global maximum optimization so that 10% most distant sa
 
 --------------------
 
+TODO: drag to move from one cluster to other
+
 connect with Deposit
 
 Sample.Id

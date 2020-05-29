@@ -2,6 +2,7 @@ from deposit import (Store, Commander, Broadcasts)
 from deposit.store.DLabel.DResource import DResource
 from deposit.store.DLabel.DString import DString
 from deposit.store.DLabel.DGeometry import DGeometry
+from deposit import Broadcasts
 
 from lib.fnc_matching import *
 from lib.fnc_drawing import *
@@ -63,6 +64,10 @@ class Model(Store):
 				level = max(level, len(sample.cluster.split(".")))
 		return level
 	
+	def set_datasource(self, data_source):
+		
+		Store.set_datasource(self, data_source)
+		self.view.on_set_datasource()
 	
 	# Calculate Distances
 	

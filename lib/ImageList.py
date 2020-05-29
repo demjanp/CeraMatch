@@ -2,6 +2,7 @@ from lib.ImageDelegate import ImageDelegate
 from lib.IconThread import IconThread
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
+import json
 
 class ListModel(QtCore.QAbstractListModel):
 	
@@ -15,7 +16,6 @@ class ListModel(QtCore.QAbstractListModel):
 		self.icons = [] # [QIcon or None, ...]; for each image
 		self.paths = [] # [path or None, ...]; for each image
 		self.empty_icon = None
-		self.proxy_model = None
 		self.threads = {} # {row: IconThread, ...}
 		
 		QtCore.QAbstractListModel.__init__(self)
@@ -43,8 +43,8 @@ class ListModel(QtCore.QAbstractListModel):
 	
 	def flags(self, index):
 		
-		return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
-		
+		return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsDragEnabled | QtCore.Qt.ItemIsDropEnabled | QtCore.Qt.ItemIsSelectable
+	
 	def data(self, index, role):
 		
 		if role == QtCore.Qt.DisplayRole:
@@ -60,7 +60,9 @@ class ListModel(QtCore.QAbstractListModel):
 			return QtGui.QColor(QtCore.Qt.white)
 		
 		if role == QtCore.Qt.DecorationRole:
-			icon = self.icons[index.row()]
+			icon = None
+			if index.row() < len(self.icons):
+				icon = self.icons[index.row()]
 			if icon is None:
 				return self.empty_icon
 			return icon
@@ -77,7 +79,7 @@ class ListModel(QtCore.QAbstractListModel):
 			return item
 			
 		return None
-		
+	
 	def on_icon_thread(self, index, path):
 		
 		if not path is None:
@@ -95,6 +97,28 @@ class ListModel(QtCore.QAbstractListModel):
 		if (self.icons[row] is None) and (not row in self.threads):
 			self.threads[row] = IconThread(self, index, self.icon_size)
 			self.threads[row].start()
+	
+	def supportedDragActions(self):
+		
+		return QtCore.Qt.CopyAction | QtCore.Qt.MoveAction
+	
+	def supportedDropActions(self):
+		
+		return QtCore.Qt.CopyAction | QtCore.Qt.MoveAction
+	
+	def mimeData(self, indexes):
+		
+		sample = ""
+		for index in indexes:
+			sample = index.data(QtCore.Qt.UserRole).to_dict()
+			break
+		data = QtCore.QMimeData()
+		data.setData("text/plain", bytes(json.dumps(sample), "utf-8"))
+		return data
+	
+	def mimeTypes(self):
+		
+		return ["text/plain"]
 
 class ImageList(QtWidgets.QListView):
 	
@@ -109,7 +133,7 @@ class ImageList(QtWidgets.QListView):
 		QtWidgets.QListView.__init__(self, view)
 		
 		self.set_up()
-		
+	
 	def set_up(self):
 		
 		self.list_model = ListModel(self.view, self.icon_size)
@@ -138,7 +162,13 @@ class ImageList(QtWidgets.QListView):
 			index = self.list_model.index(row, 0)
 			sample_id = index.data(QtCore.Qt.UserRole).id
 			self.index_lookup[sample_id] = index
-	
+		
+		self.setAcceptDrops(True)
+		self.setDragEnabled(True)
+		self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+		self.setDefaultDropAction(QtCore.Qt.CopyAction)
+		self.setDropIndicatorShown(True)
+
 	def reload(self):
 		
 		self.list_model.stop_threads()
@@ -190,5 +220,38 @@ class ImageList(QtWidgets.QListView):
 	def on_icon_loaded(self, index):
 		
 		self.update(index)
+	
+	def get_event_data(self, event):
+		
+		index = self.indexAt(event.pos())
+		target = index.data(QtCore.Qt.UserRole) # Sample
+		if target is None:
+			return None, None, None
+		data = event.mimeData()
+		if data.hasText():
+			source = json.loads(data.text())
+		else:
+			return None, None, None
+		if target.id == source["id"]:
+			return None, None, None
+		return source, target, index
+	
+	def dragMoveEvent(self, event):
+		
+		source, target, index = self.get_event_data(event)
+		if (source is None) or (target is None):
+			return
+		if target.id == source["id"]:
+			return
+		self.selectionModel().clear()
+		self.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.Select)
 
+	def dropEvent(self, event):
+		
+		source, target, index = self.get_event_data(event)
+		if (source is None) or (target is None):
+			return
+		if target.id == source["id"]:
+			return
+		self.view.on_drop(source["id"], target.id)
 
