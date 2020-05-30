@@ -43,6 +43,8 @@ class Model(Store):
 	
 	def has_clusters(self):
 		
+		if not self.samples:
+			return False
 		for sample in self.samples:
 			if not sample.has_cluster():
 				return False
@@ -68,6 +70,24 @@ class Model(Store):
 		
 		Store.set_datasource(self, data_source)
 		self.view.on_set_datasource()
+	
+	def get_sample_by_id(self, sample_id):
+		
+		for sample in self.samples:
+			if sample.id == sample_id:
+				return sample
+		return None
+	
+	def get_leaf_labels(self, sample_idxs):
+		
+		if len(sample_idxs) < 3:
+			return None
+		D = self.distance_mean[:,sample_idxs][sample_idxs]
+		pca_scores = calc_pca_scores(D)
+		if pca_scores is None:
+			return None
+		return get_hca_labels(pca_scores)
+	
 	
 	# Calculate Distances
 	
@@ -158,18 +178,28 @@ class Model(Store):
 						cluster = str(obj2.descriptors["Name"].label.value)
 						sample.cluster = cluster
 			self.calc_mean_distances()
+			self.update_leaves()
 	
+	def sort_samples_by_row(self):
+		
+		idxs = sorted(range(len(self.samples)), key = lambda idx: self.samples[idx].row)
+		self.samples = [self.samples[idx] for idx in idxs]
+		self.sample_ids = [self.sample_ids[idx] for idx in idxs]
+		if self.distance is not None:
+			self.distance = self.distance[:,idxs][idxs]
+		if self.distance_mean is not None:
+			self.distance_mean = self.distance_mean[:,idxs][idxs]
 	
 	# Sort by Sample IDs
 	
 	def sort_by_ids(self):
 		
-		sorted_ids = natsorted(self.sample_ids)
-		for sample in self.samples:
-			sample.row = sorted_ids.index(sample.id)
-			sample.value = sample.id
-			sample.label = sample.id
-		self.samples = sorted(self.samples, key = lambda sample: sample.row)
+		idxs_sort = natsorted(range(len(self.samples)), key = lambda idx: self.samples[idx].id)
+		for row, idx in enumerate(idxs_sort):
+			self.samples[idx].row = row
+			self.samples[idx].value = self.samples[idx].id
+			self.samples[idx].label = self.samples[idx].id
+		self.sort_samples_by_row()
 		self.view.image_view.reload()
 		self.view.image_view.scrollToTop()
 	
@@ -200,7 +230,7 @@ class Model(Store):
 			sample.row = order
 			sample.value = sample.id
 			sample.label = sample.id
-		self.samples = sorted(self.samples, key = lambda sample: sample.row)
+		self.sort_samples_by_row()
 		self.view.image_view.reload()
 		self.view.image_view.scrollToTop()
 	
@@ -213,7 +243,7 @@ class Model(Store):
 			sample.row = idxs.index(idx1)
 			sample.value = self.distance_mean[idx0,idx1]
 			sample.label = str(round(self.distance_mean[idx0,idx1], 2))
-		self.samples = sorted(self.samples, key = lambda sample: sample.row)
+		self.sort_samples_by_row()
 		self.view.image_view.reload()
 		self.view.image_view.scrollToTop()
 
@@ -246,11 +276,38 @@ class Model(Store):
 	
 	# Sort by Clustering
 	
-	def populate_clusters(self, selected_sample = None):
+	def update_leaves(self):
+		
+		clusters = set([])
+		for sample in self.samples:
+			if sample.cluster is not None:
+				clusters.add(sample.cluster)
+			else:
+				sample.leaf = None
+				sample.value = ""
+		for cluster in clusters:
+			sample_idxs = [idx for idx in range(len(self.samples)) if self.samples[idx].cluster == cluster]
+			sample_labels = self.get_leaf_labels(sample_idxs)
+			if sample_labels is None:
+				sample_idxs = natsorted(sample_idxs, key = lambda idx: self.samples[idx].id)
+			else:
+				sample_idxs = natsorted(sample_idxs, key = lambda idx: sample_labels[sample_idxs.index(idx)])
+			for i, idx in enumerate(sample_idxs):
+				self.samples[idx].leaf = "%s.%d" % (cluster, i + 1)
+				self.samples[idx].value = self.samples[idx].leaf
+	
+	def sort_by_cluster(self):
+		
+		idxs_sort = natsorted(range(len(self.samples)), key = lambda idx: [self.samples[idx].cluster, self.samples[idx].leaf])
+		for row, idx in enumerate(idxs_sort):
+			self.samples[idx].row = row
+			self.samples[idx].value = self.samples[idx].leaf
+		self.sort_samples_by_row()
+	
+	def color_clusters(self, selected = None):
 		
 		colors = [QtGui.QColor(253, 231, 37, 255), QtGui.QColor(68, 1, 84, 255)]
 		cluster_last = None
-		self.samples = natsorted(self.samples, key = lambda sample: [sample.cluster, sample.id])
 		levels_all = set([])
 		cluster_last = None
 		ci = True
@@ -259,7 +316,7 @@ class Model(Store):
 			if not cluster:
 				return
 			self.samples[row].row = row
-			self.samples[row].value = self.samples[row].cluster
+			self.samples[row].value = self.samples[row].leaf
 			levels = list(range(1, len(cluster.split(".")) + 1))
 			levels_all.update(set(levels))
 			if self.samples[row].cluster != cluster_last:
@@ -284,17 +341,43 @@ class Model(Store):
 				self.samples[row].label["table"][level] = colors[ci]
 		
 		self.view.image_view.reload()
-		if selected_sample is not None:
-			self.view.image_view.scrollTo(selected_sample.index)
-			self.view.image_view.set_selected([selected_sample.id])
+		if selected is not None:
+			self.view.image_view.scrollTo(selected.index)
+			self.view.image_view.set_selected([selected.id])
 	
-	def sort_by_cluster(self):
+	def consolidate_cluster_names(self):
 		
-		self.samples = natsorted(self.samples, key = lambda sample: sample.cluster)
-		for row in range(len(self.samples)):
-			self.samples[row].row = row
-		self.view.image_view.reload()
+		clusters = set([])
+		for sample in self.samples:
+			if sample.cluster is not None:
+				clusters.add(sample.cluster)
+		rename = {}  # {cluster: cluster_new, ...}
+		for cluster in clusters:
+			cluster_updated = cluster
+			cluster_new = cluster_updated
+			while True:
+				cluster_new = ".".join(cluster_updated.split(".")[:-1])
+				if not cluster_new:
+					break
+				if len([clu for clu in clusters if clu.startswith(cluster_new)]) < 2:
+					cluster_updated = cluster_new
+				else:
+					break
+			if cluster_updated != cluster:
+				rename[cluster] = cluster_updated
+		if rename:
+			for sample in self.samples:
+				if sample.cluster in rename:
+					cluster_updated = rename[sample.cluster]
+					sample.cluster = cluster_updated
+					sample.label = cluster_updated
 	
+	def update_clusters(self, selected = None):
+		
+		self.consolidate_cluster_names()
+		self.update_leaves()
+		self.sort_by_cluster()
+		self.color_clusters(selected)
 	
 	# Auto Cluster
 	
@@ -314,26 +397,23 @@ class Model(Store):
 		self.load_auto_clustering()
 		for sample in self.samples:
 			sample.cluster = self.auto_clustering[sample.id]
+		
+		self.update_clusters()
 		self.save_clusters_to_db()
 	
 	
 	# Split
 	
-	def split_cluster(self, supercluster):
+	def split_cluster(self, supercluster, selected):
 		
-		sample_idxs = [self.sample_ids.index(sample.id) for sample in self.samples if sample.cluster == supercluster]
-		
+		sample_idxs = [idx for idx in range(len(self.samples)) if self.samples[idx].cluster == supercluster]
 		if len(sample_idxs) < 3:
 			return
-		
-		D = self.distance_mean[:,sample_idxs][sample_idxs]
-		pca_scores = calc_pca_scores(D)
-		if pca_scores is None:
+		sample_labels = self.get_leaf_labels(sample_idxs)
+		if sample_labels is None:
 			return
-		
 		self.update_cluster_history()
-		sample_labels = get_sample_labels(pca_scores)
-		sample_labels = dict([(self.sample_ids[sample_idxs[idx]], sample_labels[idx]) for idx in sample_labels])  # {sample_id: label, ...}
+		sample_labels = dict([(self.sample_ids[sample_idxs[idx]], label) for idx, label in enumerate(sample_labels)])  # {sample_id: label, ...}
 		labels_new = set()
 		for sample_id in sample_labels:
 			labels_new.add(".".join(sample_labels[sample_id].split(".")[:2]))
@@ -350,12 +430,13 @@ class Model(Store):
 			if sample.id in clusters:
 				sample.cluster = clusters[sample.id]
 		
+		self.update_clusters(selected)
 		self.save_clusters_to_db()
 	
 	
 	# Join to Parent
 	
-	def join_cluster_to_parent(self, cluster):
+	def join_cluster_to_parent(self, cluster, selected):
 		
 		if not cluster:
 			return
@@ -372,12 +453,13 @@ class Model(Store):
 				if sample.cluster == cluster:
 					sample.cluster = supercluster
 		
+		self.update_clusters(selected)
 		self.save_clusters_to_db()
 	
 	
 	# Join Children
 	
-	def join_children_to_cluster(self, cluster, level):
+	def join_children_to_cluster(self, cluster, level, selected):
 		
 		if not cluster:
 			return
@@ -391,12 +473,13 @@ class Model(Store):
 			if sample.cluster.startswith("%s." % (cluster)):
 				sample.cluster = cluster
 		
+		self.update_clusters(selected)
 		self.save_clusters_to_db()
 	
 	
 	# Create Manual
 	
-	def manual_cluster(self, samples):
+	def manual_cluster(self, samples, selected):
 		
 		def get_samples_clusters(samples):
 			
@@ -447,7 +530,27 @@ class Model(Store):
 			if sample.cluster is None:
 				sample.cluster = label
 		
+		self.update_clusters(selected)
 		self.save_clusters_to_db()
+	
+	def add_to_cluster(self, src_ids, tgt_id):
+		
+		if not src_ids:
+			return False
+		sample_tgt = self.get_sample_by_id(tgt_id)
+		if (sample_tgt is None) or (sample_tgt.cluster is None):
+			return False
+		cluster_tgt = sample_tgt.cluster
+		clusters_all = set([])
+		for sample in self.samples:
+			if sample.cluster is not None:
+				clusters_all.add(sample.cluster)
+			if sample.id in src_ids:
+				sample.cluster = cluster_tgt
+				sample.label = cluster_tgt
+		self.update_clusters(self.get_sample_by_id(tgt_id))
+		self.save_clusters_to_db()
+		return True
 	
 	
 	# Clear All
@@ -456,7 +559,8 @@ class Model(Store):
 		
 		for sample in self.samples:
 			sample.cluster = None
-		
+			sample.leaf = None
+			sample.value = None
 		self.save_clusters_to_db()
 	
 	

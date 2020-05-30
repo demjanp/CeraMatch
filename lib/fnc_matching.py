@@ -582,8 +582,8 @@ def get_distmax_ordering(distance):
 		idxs_todo.remove(idx1)
 	return data
 
-def get_sample_labels(distance):
-	# returns {sample_idx: label, ...}
+def get_hca_labels(distance):
+	# returns [label, ...]
 	
 	samples_n = distance.shape[0]
 	z = linkage(distance, method = "ward") # [[idx1, idx2, dist, sample_count], ...]
@@ -617,6 +617,7 @@ def get_sample_labels(distance):
 			sample_labels[idx] += ".%d" % (int(z_idx))
 	for idx in sample_labels:
 		sample_labels[idx] = ".".join(sample_labels[idx].split(".")[2:])
+	sample_labels = [sample_labels[idx] for idx in range(samples_n)]
 	
 	return sample_labels
 

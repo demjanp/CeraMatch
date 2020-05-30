@@ -12,6 +12,7 @@ class Sample(object):
 		self.obj_id = obj_id
 		self.index = None
 		self.cluster = None
+		self.leaf = None
 
 	def has_cluster(self):
 		
@@ -25,6 +26,7 @@ class Sample(object):
 			id = self.id,
 			value = self.value,
 			cluster = self.cluster,
+			leaf = self.leaf,
 			obj_id = self.obj_id,
 		)
 	
@@ -33,4 +35,5 @@ class Sample(object):
 		self.id = data["id"]
 		self.value = data["value"]
 		self.cluster = data["cluster"]
+		self.leaf = data["leaf"]
 		self.obj_id = data["obj_id"]

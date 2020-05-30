@@ -2,6 +2,7 @@ from lib.ImageDelegate import ImageDelegate
 from lib.IconThread import IconThread
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
+import json
 
 class TableModel(QtCore.QAbstractTableModel):
 	
@@ -47,8 +48,8 @@ class TableModel(QtCore.QAbstractTableModel):
 	
 	def flags(self, index):
 		
-		return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
-		
+		return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsDragEnabled | QtCore.Qt.ItemIsDropEnabled | QtCore.Qt.ItemIsSelectable
+	
 	def data(self, index, role):
 		
 		if role == QtCore.Qt.DisplayRole:
@@ -80,7 +81,7 @@ class TableModel(QtCore.QAbstractTableModel):
 			return item
 			
 		return None
-		
+	
 	def on_icon_thread(self, index, path):
 		
 		if not path is None:
@@ -98,6 +99,27 @@ class TableModel(QtCore.QAbstractTableModel):
 		if (self.icons[column] is None) and (not column in self.threads):
 			self.threads[column] = IconThread(self, index, self.icon_size)
 			self.threads[column].start()
+	
+	def supportedDragActions(self):
+		
+		return QtCore.Qt.CopyAction | QtCore.Qt.MoveAction
+	
+	def supportedDropActions(self):
+		
+		return QtCore.Qt.CopyAction | QtCore.Qt.MoveAction
+	
+	def mimeData(self, indexes):
+		
+		samples = []
+		for index in indexes:
+			samples.append(index.data(QtCore.Qt.UserRole).to_dict())
+		data = QtCore.QMimeData()
+		data.setData("text/plain", bytes(json.dumps(samples), "utf-8"))
+		return data
+	
+	def mimeTypes(self):
+		
+		return ["text/plain"]
 
 class ImageTable(QtWidgets.QTableView):
 	
@@ -113,12 +135,13 @@ class ImageTable(QtWidgets.QTableView):
 		QtWidgets.QTableView.__init__(self, view)
 		
 		self.set_up()
-		
+	
 	def set_up(self):
 		
 		self.list_model = TableModel(self.view, self.icon_size)
 		
 		self.setItemDelegate(ImageDelegate(self))
+		self.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectItems)
 		self.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
 		self.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
 		self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
@@ -140,6 +163,12 @@ class ImageTable(QtWidgets.QTableView):
 			index = self.list_model.index(0, column)
 			sample_id = index.data(QtCore.Qt.UserRole).id
 			self.index_lookup[sample_id] = index
+		
+		self.setAcceptDrops(True)
+		self.setDragEnabled(True)
+		self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+		self.setDefaultDropAction(QtCore.Qt.CopyAction)
+		self.setDropIndicatorShown(True)
 	
 	def reload(self):
 		
@@ -196,5 +225,35 @@ class ImageTable(QtWidgets.QTableView):
 	def on_icon_loaded(self, index):
 		
 		self.update(index)
+		
+	def get_event_data(self, event):
+		
+		index = self.indexAt(event.pos())
+		target = index.data(QtCore.Qt.UserRole) # Sample
+		if target is None:
+			return None, None, None
+		data = event.mimeData()
+		if data.hasText():
+			sources = json.loads(data.text())
+		else:
+			return None, None, None
+		if target.id in [source["id"] for source in sources]:
+			return None, None, None
+		return sources, target, index
+		
+	def dragMoveEvent(self, event):
+		
+		sources, target, index = self.get_event_data(event)
+		if (sources is None) or (target is None):
+			return
+		self.selectionModel().clear()
+		self.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.Select)
+		
+	def dropEvent(self, event):
+		
+		sources, target, index = self.get_event_data(event)
+		if (sources is None) or (target is None):
+			return
+		self.view.on_drop([source["id"] for source in sources], target.id)
 
 

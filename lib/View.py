@@ -103,7 +103,7 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.connect_broadcast(Broadcasts.STORE_LOADED, self.on_update)
 		self.connect_broadcast(Broadcasts.STORE_DATA_SOURCE_CHANGED, self.on_update)
 		self.connect_broadcast(Broadcasts.STORE_DATA_CHANGED, self.on_update)
-		
+	
 	def get_selected(self):
 		# returns [[sample_id, DResource, label, value, index], ...]
 		
@@ -131,7 +131,6 @@ class View(DModule, QtWidgets.QMainWindow):
 			levels = self.image_view.get_selected_level()
 			if levels:
 				cluster = ".".join(cluster.split(".")[:levels[0]])
-			
 			if cluster:
 				text = "Cluster: %s, Label: %s, Sample ID: %s" % (cluster, selected[0].value, selected[0].id)
 			else:
@@ -179,14 +178,12 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.mode = self.MODE_CLUSTER
 		
 		if self.model.has_clusters():
-			self.model.populate_clusters()
-			self.model.sort_by_cluster()
+			self.model.update_clusters()
 	
 	def on_auto_cluster(self, *args):
 		
 		self.mode = self.MODE_CLUSTER
 		self.model.auto_cluster()
-		self.model.populate_clusters()
 	
 	def on_split_cluster(self, *args):
 		
@@ -196,8 +193,7 @@ class View(DModule, QtWidgets.QMainWindow):
 		cluster = selected[0].cluster
 		if cluster is None:
 			return
-		self.model.split_cluster(cluster)
-		self.model.populate_clusters(selected[0])
+		self.model.split_cluster(cluster, selected[0])
 	
 	def on_join_parent(self, *args):
 		
@@ -213,10 +209,7 @@ class View(DModule, QtWidgets.QMainWindow):
 			clusters.add(sample.cluster)
 		if clusters:
 			for cluster in clusters:
-				self.model.join_cluster_to_parent(cluster)
-		else:
-			self.model.join_cluster_to_parent()
-		self.model.populate_clusters(selected[0])
+				self.model.join_cluster_to_parent(cluster, selected[0])
 	
 	def on_join_children(self, *args):
 		
@@ -237,24 +230,21 @@ class View(DModule, QtWidgets.QMainWindow):
 				return
 			level = max(levels)
 			for cluster in clusters:
-				self.model.join_children_to_cluster(cluster, level)
+				self.model.join_children_to_cluster(cluster, level, selected[0])
 		else:
 			return
-		self.model.populate_clusters(selected[0])
 	
 	def on_manual_cluster(self, *args):
 		
 		selected = self.image_view.get_selected()
 		if not selected:
 			return
-		self.model.manual_cluster(selected)
-		self.model.populate_clusters(selected[0])
+		self.model.manual_cluster(selected, selected[0])
 	
 	def on_clear_clusters(self, *args):
 		
 		self.model.clear_clusters()
 		self.model.sort_by_ids()
-		self.model.sort_by_cluster()
 	
 	def on_reload(self, *args):
 		
@@ -281,9 +271,9 @@ class View(DModule, QtWidgets.QMainWindow):
 		
 		self.image_view.set_thumbnail_size(value)
 	
-	def on_drop(self, src_id, tgt_id):
+	def on_drop(self, src_ids, tgt_id):
 		
-		print("drop", src_id, tgt_id)  # DEBUG
+		self.model.add_to_cluster(src_ids, tgt_id)
 	
 	def closeEvent(self, event):
 		

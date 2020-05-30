@@ -108,12 +108,11 @@ class ListModel(QtCore.QAbstractListModel):
 	
 	def mimeData(self, indexes):
 		
-		sample = ""
+		samples = []
 		for index in indexes:
-			sample = index.data(QtCore.Qt.UserRole).to_dict()
-			break
+			samples.append(index.data(QtCore.Qt.UserRole).to_dict())
 		data = QtCore.QMimeData()
-		data.setData("text/plain", bytes(json.dumps(sample), "utf-8"))
+		data.setData("text/plain", bytes(json.dumps(samples), "utf-8"))
 		return data
 	
 	def mimeTypes(self):
@@ -229,29 +228,25 @@ class ImageList(QtWidgets.QListView):
 			return None, None, None
 		data = event.mimeData()
 		if data.hasText():
-			source = json.loads(data.text())
+			sources = json.loads(data.text())
 		else:
 			return None, None, None
-		if target.id == source["id"]:
+		if target.id in [source["id"] for source in sources]:
 			return None, None, None
-		return source, target, index
+		return sources, target, index
 	
 	def dragMoveEvent(self, event):
 		
-		source, target, index = self.get_event_data(event)
-		if (source is None) or (target is None):
-			return
-		if target.id == source["id"]:
+		sources, target, index = self.get_event_data(event)
+		if (sources is None) or (target is None):
 			return
 		self.selectionModel().clear()
 		self.selectionModel().select(index, QtCore.QItemSelectionModel.SelectionFlag.Select)
 
 	def dropEvent(self, event):
 		
-		source, target, index = self.get_event_data(event)
-		if (source is None) or (target is None):
+		sources, target, index = self.get_event_data(event)
+		if (sources is None) or (target is None):
 			return
-		if target.id == source["id"]:
-			return
-		self.view.on_drop(source["id"], target.id)
+		self.view.on_drop([source["id"] for source in sources], target.id)
 
