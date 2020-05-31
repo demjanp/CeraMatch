@@ -379,6 +379,7 @@ class Model(Store):
 		self.sort_by_cluster()
 		self.color_clusters(selected)
 	
+	
 	# Auto Cluster
 	
 	def load_auto_clustering(self):
@@ -540,6 +541,7 @@ class Model(Store):
 		sample_tgt = self.get_sample_by_id(tgt_id)
 		if (sample_tgt is None) or (sample_tgt.cluster is None):
 			return False
+		self.update_cluster_history()
 		cluster_tgt = sample_tgt.cluster
 		clusters_all = set([])
 		for sample in self.samples:
@@ -593,6 +595,7 @@ class Model(Store):
 		data = self.clusters_todict()
 		if data:
 			self.cluster_history.append(data)
+			self.view.update()
 	
 	def undo_clustering(self):
 		
@@ -602,7 +605,7 @@ class Model(Store):
 		if not data:
 			return
 		self.clusters_fromdict(data)
-		
+		self.update_clusters()
 		self.save_clusters_to_db()
 	
 	

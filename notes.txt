@@ -1,17 +1,13 @@
 
-check if nonlinear / piecewise linear algebra (deep learning) can be used for clustering
-check Unsupervised learning using Neural Networks
-
-distmax - try sort using global maximum optimization so that 10% most distant samples have maximum (min / avg / median?) distance
+TODO:
 
 --------------------
-
-TODO: drag to move from one cluster to other
 
 connect with Deposit
 
 Sample.Id
 Sample.Profile
+Sample.Radius
 Sample.Reconstruction
 
 store distances in Deposit
@@ -71,3 +67,9 @@ get_clusters(D, limit = 0.68)
 	3. join clusters with the smallest distance
 	4. repeat steps 2 and 3 while any two clusters have a finite distance
 
+--------------------------------
+
+check if nonlinear / piecewise linear algebra (deep learning) can be used for clustering
+check Unsupervised learning using Neural Networks
+
+distmax - try sort using global maximum optimization so that 10% most distant samples have maximum (min / avg / median?) distance

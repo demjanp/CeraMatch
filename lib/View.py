@@ -116,6 +116,7 @@ class View(DModule, QtWidgets.QMainWindow):
 
 		self.cluster_group.update()
 		self.footer_frame.update()
+		self.toolbar.update()
 		self.image_view.update_()
 		
 		selected = self.get_selected()
