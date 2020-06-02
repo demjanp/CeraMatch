@@ -1,5 +1,5 @@
 
-TODO:
+TODO: debug load db with clusters, than without clusters
 
 --------------------
 
@@ -73,3 +73,5 @@ check if nonlinear / piecewise linear algebra (deep learning) can be used for cl
 check Unsupervised learning using Neural Networks
 
 distmax - try sort using global maximum optimization so that 10% most distant samples have maximum (min / avg / median?) distance
+
+try using directed distances (A -> B != B -> A)

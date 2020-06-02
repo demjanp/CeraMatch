@@ -37,6 +37,7 @@ class ImageView(QtWidgets.QTabWidget):
 		
 		self.tab_list.update_()
 		self.tab_table.update_()
+		self.setTabEnabled(1, self.model.has_clusters())
 	
 	def set_thumbnail_size(self, value):
 		
@@ -50,6 +51,8 @@ class ImageView(QtWidgets.QTabWidget):
 	
 	def on_tab_changed(self, index):
 		
+		if (index == 1) and (self.view.mode != self.view.MODE_CLUSTER):
+			self.view.on_cluster()
 		self.view.update()
 	
 	def __getattr__(self, attr):

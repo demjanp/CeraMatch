@@ -1,6 +1,8 @@
 from lib.Model import (Model)
 from lib.ImageView import (ImageView)  # DEBUG
 from lib.ClusterGroup import (ClusterGroup)
+from lib.SortGroup import (SortGroup)
+from lib.DescriptorGroup import (DescriptorGroup)
 from lib.FooterFrame import (FooterFrame)
 from lib.Menu import (Menu)
 from lib.ToolBar import (ToolBar)
@@ -48,6 +50,8 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.registry = Registry("Deposit")
 		self.image_view = ImageView(self)
 		self.footer_frame = FooterFrame(self)
+		self.descriptor_group = DescriptorGroup(self)
+		self.sort_group = SortGroup(self)
 		self.cluster_group = ClusterGroup(self)
 		self.menu = Menu(self)
 		self.toolbar = ToolBar(self)
@@ -55,14 +59,6 @@ class View(DModule, QtWidgets.QMainWindow):
 		
 		self.calculate_button = Button("Calculate Distances", self.on_calculate)
 		self.calculate_button.setEnabled(False)
-		self.samples_button = Button("Sort by Sample IDs", self.on_samples)
-		self.samples_button.setEnabled(False)
-		self.distance_max_button = Button("Sort by Max Distance", self.on_distance_max)
-		self.distance_max_button.setEnabled(False)
-		self.distance_min_button = Button("Sort by Min Distance", self.on_distance_min)
-		self.distance_min_button.setEnabled(False)
-		self.cluster_button = Button("Sort by Clustering", self.on_cluster)
-		self.cluster_button.setEnabled(False)
 		
 		self.left_frame = QtWidgets.QFrame(self)
 		self.left_frame.setLayout(QtWidgets.QVBoxLayout())
@@ -75,12 +71,12 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.splitter.addWidget(self.left_frame)
 		self.splitter.addWidget(self.right_frame)
 		
-		self.left_frame.layout().addWidget(self.cluster_group)
-		self.left_frame.layout().addWidget(self.calculate_button)
-		self.left_frame.layout().addWidget(self.samples_button)
-		self.left_frame.layout().addWidget(self.distance_max_button)
-		self.left_frame.layout().addWidget(self.distance_min_button)
-		self.left_frame.layout().addWidget(self.cluster_button)
+		self.left_frame.layout().addWidget(self.descriptor_group)
+		group = QtWidgets.QGroupBox("Calculate")
+		group.setLayout(QtWidgets.QVBoxLayout())
+		group.layout().addWidget(self.calculate_button)
+		self.left_frame.layout().addWidget(group)
+		self.left_frame.layout().addWidget(self.sort_group)
 		self.left_frame.layout().addWidget(self.cluster_group)
 		self.left_frame.layout().addStretch()
 		
@@ -111,9 +107,11 @@ class View(DModule, QtWidgets.QMainWindow):
 	
 	def update(self):
 		
-		if not hasattr(self, "cluster_group"):
+		if not hasattr(self, "descriptor_group"):
 			return
 
+		self.descriptor_group.update()
+		self.sort_group.update()
 		self.cluster_group.update()
 		self.footer_frame.update()
 		self.toolbar.update()
@@ -122,21 +120,26 @@ class View(DModule, QtWidgets.QMainWindow):
 		selected = self.get_selected()
 		
 		self.calculate_button.setEnabled(self.model.is_connected() and not self.model.has_distances())
-		self.samples_button.setEnabled(self.model.is_connected())
-		self.distance_max_button.setEnabled(self.model.has_distances())
-		self.distance_min_button.setEnabled(self.model.has_distances() and ((len(selected) > 0) or ((len(self.model.samples) > 0) and isinstance(self.model.samples[0].value, float))))
-		self.cluster_button.setEnabled(self.model.has_clusters())
 		
 		if selected:
-			cluster = selected[0].cluster
-			levels = self.image_view.get_selected_level()
-			if levels:
-				cluster = ".".join(cluster.split(".")[:levels[0]])
-			if cluster:
-				text = "Cluster: %s, Label: %s, Sample ID: %s" % (cluster, selected[0].value, selected[0].id)
+			if self.mode == self.MODE_DISTANCE_MIN:
+				text = "Distance: %s, Sample ID: %s" % (selected[0].value, selected[0].id)
 			else:
-				text = "Label: %s, Sample ID: %s" % (selected[0].value, selected[0].id)
+				cluster = selected[0].cluster
+				levels = self.image_view.get_selected_level()
+				if levels:
+					cluster = ".".join(cluster.split(".")[:levels[0]])
+				if cluster:
+					text = "Cluster: %s, Leaf: %s, Sample ID: %s" % (cluster, selected[0].value, selected[0].id)
+				else:
+					text = "Sample ID: %s" % (selected[0].id)
 			self.statusbar.message(text)
+	
+	def reload_samples(self):
+		
+		self.model.load_samples()
+		self.update()
+		self.on_samples()
 	
 	def on_update(self, *args):
 		
@@ -144,9 +147,7 @@ class View(DModule, QtWidgets.QMainWindow):
 	
 	def on_set_datasource(self, *args):
 		
-		self.model.load_samples()
-		self.update()
-		self.on_samples()
+		self.reload_samples()
 	
 	def on_calculate(self, *args):
 		

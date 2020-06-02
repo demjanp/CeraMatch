@@ -20,7 +20,6 @@ class Model(Store):
 		
 		self.view = view
 		self.dc = None
-		self.root_path = None
 		self.samples = [] # [Sample, ...]
 		self.sample_ids = []
 		self.distance = None  # distance[i, j] = [diam_dist, axis_dist, h_dist]; i, j: indexes in samples
@@ -145,18 +144,26 @@ class Model(Store):
 		
 		self.samples = []
 		self.sample_ids = []
-		for obj_id in self.classes["Sample"].objects:
-			obj = self.objects[obj_id]
-			sample_id = obj.descriptors["Id"].label
-			profile = obj.descriptors["Profile"].label
-			radius = obj.descriptors["Radius"].label
-			recons = obj.descriptors["Reconstruction"].label
-			if isinstance(sample_id, DString) and isinstance(profile, DGeometry) and isinstance(radius, DString) and isinstance(recons, DResource):
-				sample_id = str(sample_id.value)
-				self.sample_ids.append(sample_id)
-				self.samples.append(Sample(sample_id, recons, sample_id, sample_id, len(self.samples), obj_id))
+		self.distmax_ordering = {}
+		self.cluster_history = []
+		self.auto_clustering = {}
+		
+		descriptors = self.view.descriptor_group.get_values()
+		if descriptors:
+			cls_sample, descr_id, descr_profile, descr_radius, descr_recons = descriptors
+			for obj_id in self.classes[cls_sample].objects:
+				obj = self.objects[obj_id]
+				sample_id = obj.descriptors[descr_id].label
+				profile = obj.descriptors[descr_profile].label
+				radius = obj.descriptors[descr_radius].label
+				recons = obj.descriptors[descr_recons].label
+				if isinstance(sample_id, DString) and isinstance(profile, DGeometry) and isinstance(radius, DString) and isinstance(recons, DResource):
+					sample_id = str(sample_id.value)
+					self.sample_ids.append(sample_id)
+					self.samples.append(Sample(sample_id, recons, sample_id, sample_id, len(self.samples), obj_id))
 		
 		self.distance = None
+		self.distance_mean = None
 		if self.samples:
 			self.distance = np.zeros((len(self.samples), len(self.samples), 3))
 			self.distance[:] = np.inf
@@ -189,6 +196,7 @@ class Model(Store):
 			self.distance = self.distance[:,idxs][idxs]
 		if self.distance_mean is not None:
 			self.distance_mean = self.distance_mean[:,idxs][idxs]
+	
 	
 	# Sort by Sample IDs
 	
