@@ -1,8 +1,9 @@
-from deposit import (Store, Commander, Broadcasts)
+from deposit import (Broadcasts)
+from deposit.store.Store import (Store)
+from deposit.commander.Commander import (Commander)
 from deposit.store.DLabel.DResource import DResource
 from deposit.store.DLabel.DString import DString
 from deposit.store.DLabel.DGeometry import DGeometry
-from deposit import Broadcasts
 
 from lib.fnc_matching import *
 from lib.fnc_drawing import *
@@ -31,6 +32,8 @@ class Model(Store):
 		self._last_changed = -1
 		
 		Store.__init__(self, parent = self.view)
+		
+		self.broadcast_timer = QtCore.QTimer()
 	
 	def is_connected(self):
 		

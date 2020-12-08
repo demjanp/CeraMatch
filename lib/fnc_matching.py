@@ -9,10 +9,8 @@ from skimage import measure
 from scipy.spatial.distance import cdist, pdist, squareform
 from scipy.cluster.hierarchy import linkage
 from scipy.interpolate import interp1d
-
-def profile_length(profile):
-	
-	return np.sqrt((np.diff(profile, axis = 0) ** 2).sum(axis = 1)).sum()
+from scipy.signal import convolve2d
+import networkx as nx
 
 def get_rim(profile):
 	
@@ -42,7 +40,8 @@ def rotate_coords(coords, angle):
 	
 	return np.dot(coords,np.array([[np.cos(angle),np.sin(angle)],[-np.sin(angle),np.cos(angle)]]))
 
-def smoothen_coords(coords, step = 0.5, resolution = 0.5):
+'''
+def __smoothen_coords(coords, step = 0.5, resolution = 0.5):
 	# coords = [[x, y], ...]
 	
 	if step <= 0:
@@ -66,6 +65,80 @@ def smoothen_coords(coords, step = 0.5, resolution = 0.5):
 		return np.array(collect)
 	
 	return coords
+'''
+
+def coords_between(p0, p1, step):
+	
+	x0, y0 = p0.astype(float)
+	x1, y1 = p1.astype(float)
+	l = int(round(max(abs(x1 - x0), abs(y1 - y0)) / step))
+	if not l:
+		return np.array([p0, p1])
+	coords = np.vstack((np.linspace(x0, x1, l), np.linspace(y0, y1, l))).T
+	if not (coords[0] == p0).all():
+		coords = np.vstack((p0, coords))
+	if not (coords[-1] == p1).all():
+		coords = np.vstack((coords, p1))
+	return coords
+
+def get_interpolated(coords, step):
+	
+	d = np.sqrt(np.sum(np.diff(coords, axis = 0)**2, axis = 1))
+	idxs_skips = np.where(d > step)[0]
+	if idxs_skips.size:
+		idxs_skips += 1
+		filled = []
+		for i, idx in enumerate(idxs_skips):
+			filled.append(np.array(list(coords_between(coords[idx - 1], coords[idx], step))))
+			if i < len(idxs_skips) - 1:
+				idx0 = idx + 1
+				idx1 = idxs_skips[i + 1] - 1
+				if idx1 > idx0:
+					filled.append(coords[idx0:idx1])
+		if idxs_skips[0] > 1:
+			filled = [coords[:idxs_skips[0] - 1]] + filled
+		if idxs_skips[-1] < coords.shape[0] - 1:
+			filled.append(coords[idxs_skips[-1] + 1:])
+		if filled:
+			coords = np.vstack(filled)
+	return coords
+
+def smoothen_coords(coords, step = 0.5, resolution = 0.5, closed = False):
+	# coords = [[x, y], ...]
+	
+	if step <= 0.1:
+		return coords
+	
+	coords = get_interpolated(coords, step)
+	
+	d = np.append(0, np.cumsum(np.sqrt(np.sum(np.diff(coords, axis = 0)**2, axis = 1))))
+	coords = np.array([coords[np.abs(d - d[idx]) < step].mean(axis = 0) for idx in range(coords.shape[0])])
+	
+	collect = [coords[0]]
+	for xy in coords[1:]:
+		if not (xy == collect[-1]).all():
+			collect.append(xy)
+	coords = np.array(collect)
+	
+	if closed and (coords.shape[0] > 2):
+		coords = np.vstack((coords[-2:], coords, coords[:3]))
+	
+	d = np.append(0, np.cumsum(np.sqrt(np.sum(np.diff(coords, axis = 0)**2, axis = 1))))
+	l = max(2, int(round(d[-1] / resolution)))
+	alpha = np.linspace(0, d[-1], l)
+	try:
+		coords = interp1d(d, coords, kind = "cubic", axis = 0)(alpha)
+	except:
+		return np.array(collect)
+	
+	if closed:
+		l = max(1, coords.shape[0] // 3)
+		idx = np.where((((coords[-l:][:,None] - coords[:l][None,:])**2).sum(axis = 2) < (resolution**2)).any(axis = 0))[0]
+		if idx.size:
+			idx = idx.max()
+			coords = coords[idx:]
+	
+	return coords
 
 def clean_mask(mask):
 	
@@ -75,7 +148,7 @@ def clean_mask(mask):
 	value = sorted(values.tolist(), key = lambda value: (labels == value).sum())[-1]
 	return (labels == value)
 
-def profile_axis(profile, rasterize_factor):
+def profile_axis(profile, rasterize_factor, min_length = 10):
 	
 	[x0, y0], [x1, y1] = profile.min(axis = 0), profile.max(axis = 0)
 	x0, y0, x1, y1 = int(x0) - 1, int(y0) - 1, int(x1) + 1, int(y1) + 1
@@ -101,59 +174,20 @@ def profile_axis(profile, rasterize_factor):
 	around1 = collect[0] - 1
 	around2 = collect[1] - 2
 	
-	mask = skeletonize(profile_mask)
-	nodes = np.zeros(mask.shape, dtype = bool)
-	skelet = mask.copy()
-	for i, j in np.argwhere(mask):
-		ijs = around1 + [i,j]
-		ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < mask.shape).all(axis = 1)]
-		if mask[ijs[:,0], ijs[:,1]].sum() == 3:
-			ijs = around2 + [i,j]
-			if mask[ijs[:,0], ijs[:,1]].sum() == 3:
-				skelet[i,j] = False
-				nodes[i,j] = True
-	nodes = dilation(nodes, square(3))
-	skelet[nodes] = False
-	collect = set([])
-	for i, j in np.argwhere(nodes):
-		ijs = around1 + [i,j]
-		ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < skelet.shape).all(axis = 1)]
-		ijs = ijs[skelet[ijs[:,0], ijs[:,1]]]
-		for i, j in ijs:
-			collect.add((i, j))
-	endpoints = np.array(list(collect), dtype = int)
-	if not endpoints.size:
-		for i, j in np.argwhere(mask):
-			ijs = around1 + [i,j]
-			ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < mask.shape).all(axis = 1)]
-			if mask[ijs[:,0], ijs[:,1]].sum() == 1:
-				endpoints = np.array([[i,j]], dtype = int)
-				break
+	skelet = skeletonize(profile_mask)
+	connectivity = convolve2d(skelet, square(3), mode = "same", boundary = "fill", fillvalue = False)
+	nodes = (skelet & ((connectivity > 3) | (connectivity == 2)))
 	
+	rcs = np.argwhere(skelet)
+	idxs_nodes = set(np.where(nodes[rcs[:,0], rcs[:,1]])[0].tolist())
+	d = np.abs(np.dstack((rcs[:,0,None] - rcs[None,:,0], rcs[:,1,None] - rcs[None,:,1]))).max(axis = 2)
+	G = nx.from_numpy_matrix(d == 1)
 	paths = []
-	done = set([])
-	for i0, j0 in endpoints:
-		if (i0, j0) in done:
+	for i, j in combinations(idxs_nodes, 2):
+		path = nx.shortest_path(G, i, j)
+		if len(idxs_nodes.intersection(path)) > 2:
 			continue
-		path = [[i0,j0]]
-		i, j = path[-1]
-		while True:
-			done.add((i, j))
-			ijs = around1 + [i,j]
-			ijs = ijs[(ijs >= 0).all(axis = 1) & (ijs < skelet.shape).all(axis = 1)]
-			slice = ijs[skelet[ijs[:,0], ijs[:,1]]]
-			found = False
-			for i1, j1 in slice:
-				if (i1, j1) not in done:
-					path.append([i1, j1])
-					done.add((i1, j1))
-					found = True
-					break
-			if not found:
-				break
-			i, j = path[-1]
-		paths.append(path)
-	
+		paths.append(rcs[path])
 	paths = sorted(paths, key = lambda path: len(path))
 	
 	axis = np.array(paths.pop(), dtype = float)	
@@ -178,28 +212,39 @@ def profile_axis(profile, rasterize_factor):
 		elif (d4 < d_max) and (d2 > d_max):
 			axis = np.vstack((axis, path[::-1]))
 	
+	axis0 = axis.copy()
+	
 	d = cdist(axis, profile).min(axis = 1)
 	thickness = d * 2
 	thickness = thickness[thickness > thickness.max() / 2].mean()
 	d = cdist(axis, [profile[0], profile[-1]]).min(axis = 1)
 	axis = axis[d > thickness]
 	
+	if axis.shape[0] < min_length:
+		axis = axis0.copy()
+	
 	d = cdist([axis[0]], axis)[0]
 	axis = axis[d > thickness / 2]
+	
+	if axis.shape[0] < min_length:
+		axis = axis0.copy()
 	
 	axis = axis / rasterize_factor + [x0, y0]
 	
 	axis = smoothen_coords(axis)
 	
-	return axis
+	return axis, thickness / rasterize_factor
 
 def diameter_dist(axis1, radius1, axis2, radius2):
 	
 	axis1 = axis1 + [radius1, 0]
 	axis2 = axis2 + [radius2, 0]
 	ymax = min(axis1[:,1].max(), axis2[:,1].max())
-	axis1 = axis1[axis1[:,1] < ymax]
-	axis2 = axis2[axis2[:,1] < ymax]
+	axis1 = axis1[axis1[:,1] <= ymax]
+	axis2 = axis2[axis2[:,1] <= ymax]
+	if (not axis1.size) or (not axis2.size):
+		print("diam dist error")
+		return 1
 	d_sum = 0
 	d_norm = 0
 	for i in range(axis1.shape[0]):
@@ -520,14 +565,18 @@ def calc_distances(profiles, distance = None):
 		print("\rpreparing data {:0.0%}".format(cnt / cmax), end = "")
 		cnt += 1
 		profile, radius = profiles[sample_id]
-		axis = profile_axis(profile, rasterize_factor)
+		axis, _ = profile_axis(profile, rasterize_factor)
+		if axis.shape[0] < 10:
+			print("\naxis error: %s (%d)\n" % (sample_id, axis.shape[0])) # DEBUG
+			raise
 		axis = axis - axis[0]
 		keypoints, thickness = find_keypoints(profile, rasterize_factor)
 		data[sample_id] = [profile, axis, radius, keypoints, thickness]
 	collect_mp = manager.list()
 	cmax = len(ijs_mp)
 	procs = []
-	for pi in range(mp.cpu_count()):
+#	for pi in range(mp.cpu_count()):
+	for pi in range(min(30, mp.cpu_count())):
 		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids, cmax)))
 		procs[-1].start()
 	for proc in procs:

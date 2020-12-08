@@ -1,5 +1,5 @@
 
-TODO: debug load db with clusters, than without clusters
+TODO: debug load db first with clusters, then without clusters
 
 --------------------
 
@@ -69,9 +69,14 @@ get_clusters(D, limit = 0.68)
 
 --------------------------------
 
+A hierarchical clustering algorithm based on the Hungarian method
+https://doi.org/10.1016/j.patrec.2008.04.003
+
+http://www.cs.utexas.edu/~grauman/courses/spring2008/slides/ShapeMatching.pdf
+
 check if nonlinear / piecewise linear algebra (deep learning) can be used for clustering
 check Unsupervised learning using Neural Networks
 
 distmax - try sort using global maximum optimization so that 10% most distant samples have maximum (min / avg / median?) distance
 
-try using directed distances (A -> B != B -> A)
+try using directed hamming distances (A -> B != B -> A)
