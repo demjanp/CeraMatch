@@ -1,5 +1,7 @@
 
-TODO: debug load db first with clusters, then without clusters
+TODO:
+	auto-clustering: add all drawings without calculated distance into one cluster
+	(?) debug load db first with clusters, then without clusters
 
 --------------------
 

@@ -23,7 +23,7 @@ class Model(Store):
 		self.dc = None
 		self.samples = [] # [Sample, ...]
 		self.sample_ids = []
-		self.distance = None  # distance[i, j] = [diam_dist, axis_dist, h_dist]; i, j: indexes in samples
+		self.distance = None  # distance[i, j] = [diam_dist, axis_dist, h_dist, h_rim_dist]; i, j: indexes in samples
 		self.distance_mean = None  # distance_mean[i, j] = mean dist
 		self.distmax_ordering = {} # {row: sample_id, ...}
 		self.cluster_history = [] # [data, ...]; data = {cluster: [sample.todict(), ...], ...}
@@ -114,13 +114,15 @@ class Model(Store):
 		for i, j in combinations(range(len(self.samples)), 2):
 			obj_id1 = self.samples[i].obj_id
 			obj_id2 = self.samples[j].obj_id
-			diam_dist, axis_dist, h_dist = self.distance[i,j]
+			diam_dist, axis_dist, h_dist, h_rim_dist = self.distance[i,j]
 			self.objects[obj_id1].relations.add("diam_dist", obj_id2, diam_dist)
 			self.objects[obj_id2].relations.add("diam_dist", obj_id1, diam_dist)
 			self.objects[obj_id1].relations.add("axis_dist", obj_id2, axis_dist)
 			self.objects[obj_id2].relations.add("axis_dist", obj_id1, axis_dist)
 			self.objects[obj_id1].relations.add("h_dist", obj_id2, h_dist)
 			self.objects[obj_id2].relations.add("h_dist", obj_id1, h_dist)
+			self.objects[obj_id1].relations.add("h_rim_dist", obj_id2, h_rim_dist)
+			self.objects[obj_id2].relations.add("h_rim_dist", obj_id1, h_rim_dist)
 		
 		self.view.update()
 	
@@ -168,7 +170,7 @@ class Model(Store):
 		self.distance = None
 		self.distance_mean = None
 		if self.samples:
-			self.distance = np.zeros((len(self.samples), len(self.samples), 3))
+			self.distance = np.zeros((len(self.samples), len(self.samples), 4))
 			self.distance[:] = np.inf
 			for i, j in combinations(range(len(self.samples)), 2):
 				obj_id1 = self.samples[i].obj_id
@@ -176,9 +178,10 @@ class Model(Store):
 				diam_dist = self.objects[obj_id1].relations["diam_dist"].weight(obj_id2)
 				axis_dist = self.objects[obj_id1].relations["axis_dist"].weight(obj_id2)
 				h_dist = self.objects[obj_id1].relations["h_dist"].weight(obj_id2)
-				if None not in [diam_dist, axis_dist, h_dist]:
-					self.distance[i,j] = [float(diam_dist), float(axis_dist), float(h_dist)]
-					self.distance[j,i] = [float(diam_dist), float(axis_dist), float(h_dist)]
+				h_rim_dist = self.objects[obj_id1].relations["h_rim_dist"].weight(obj_id2)
+				if None not in [diam_dist, axis_dist, h_dist, h_rim_dist]:
+					self.distance[i,j] = [float(diam_dist), float(axis_dist), float(h_dist), float(h_rim_dist)]
+					self.distance[j,i] = [float(diam_dist), float(axis_dist), float(h_dist), float(h_rim_dist)]
 			for i in range(len(self.samples)):
 				self.distance[i,i] = 0
 			for sample in self.samples:
