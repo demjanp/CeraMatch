@@ -1,36 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import lib
-from lib import (__version__, __date__)
+from lib.dialogs._Dialog import (Dialog)
+from lib import (__version__, __date__, __file__)
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
 import os
 
-class About(QtWidgets.QDialog):
-
-	def __init__(self, model, view, *args):
-		
-		self.model = model
-		self.view = view
-		self.buttonBox = None
-
-		QtWidgets.QDialog.__init__(self, self.view)
-		
-		self.setAttribute(QtCore.Qt.WA_DeleteOnClose)
-		self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding)
-		
-		self.set_up(*args)
-
-		self.setWindowTitle("About CeraMatch")
-		
-		self.buttonBox = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok, QtCore.Qt.Horizontal)
-		self.buttonBox.accepted.connect(self.accept)
-		QtWidgets.QDialog.layout(self).addWidget(self.buttonBox)
-		self.adjustSize()
+class About(Dialog):
 	
-	def set_up(self, *args):
-
+	def title(self):
+		
+		return "About CeraMatch"
+	
+	def set_up(self):
+		
 		self.setMinimumWidth(400)
 		self.setModal(True)
 		self.setLayout(QtWidgets.QVBoxLayout())
@@ -41,7 +25,7 @@ class About(QtWidgets.QDialog):
 		
 		self.logo = QtWidgets.QLabel()
 		self.logo.setPixmap(QtGui.QPixmap("res/cm_logo.svg"))
-		path = os.path.join(os.path.dirname(lib.__file__), "..", "THIRDPARTY.TXT").replace("\\", "/")
+		path = os.path.join(os.path.dirname(__file__), "..", "THIRDPARTY.TXT").replace("\\", "/")
 		self.label = QtWidgets.QLabel('''
 <h2>CeraMatch</h2>
 <h4>Shape matching and clustering of ceramic shapes</h4>
@@ -54,6 +38,21 @@ class About(QtWidgets.QDialog):
 <p><a href="https://github.com/demjanp/CeraMatch">Home page</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="%s">Third party libraries</a></p>
 		''' % (__version__, __date__, __date__.split(".")[-1], path))
 		self.label.setOpenExternalLinks(True)
-		self.content.layout().addWidget(self.logo)
-		self.content.layout().addWidget(self.label)
-
+		
+		self.logobox = QtWidgets.QFrame()
+		self.logobox.setLayout(QtWidgets.QVBoxLayout())
+		self.logobox.layout().addWidget(self.logo)
+		self.logobox.layout().addStretch()
+		
+		self.labelbox = QtWidgets.QFrame()
+		self.labelbox.setLayout(QtWidgets.QVBoxLayout())
+		self.labelbox.layout().addWidget(self.label)
+		self.labelbox.layout().addStretch()
+		
+		self.content.layout().addWidget(self.logobox)
+		self.content.layout().addWidget(self.labelbox)
+		self.content.layout().addStretch()
+	
+	def button_box(self):
+		
+		return True, False

@@ -1,7 +1,38 @@
 
+Toolbar:
+	connect
+	save
+	deposit
+	export tree as PDF
+	export clusters as PDF
+	undo
+	
+Left panel:
+	Class / Descriptors:
+		Sample Class
+		Cluster Class (?)
+		Descriptors - default or load from LAP
+	Calculate Distances
+	Delete Distances
+	
+	Cluster Samples
+		Cluster button
+		N Clusters: dropdown [by-limit, 2 ... n_samples]
+		Limit: [0.68]
+
+drag sample over cluster -> move to cluster
+
+
+--------------------
+
 TODO:
 	auto-clustering: add all drawings without calculated distance into one cluster
 	(?) debug load db first with clusters, then without clusters
+
+get_clusters_w - weighted by D, assign single samples first
+get_clusters_w2 - weighted by D, merge clusters only
+get_clusters_s - weighted by PCA, assign single samples first
+get_clusters_s2 - weighted by PCA, merge clusters only
 
 --------------------
 

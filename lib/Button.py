@@ -10,6 +10,4 @@ class Button(QtWidgets.QPushButton):
 		if icon is not None:
 			self.setIcon(QtGui.QIcon("res\%s" % (icon)))
 		
-		self.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-		self.setFixedWidth(200)
 		self.clicked.connect(callback)

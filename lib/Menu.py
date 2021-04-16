@@ -1,8 +1,6 @@
 from deposit.commander.menu._MRUDMenu import (MRUDMenu)
 from deposit import Broadcasts
 
-from lib.About import About
-
 from PySide2 import (QtWidgets, QtCore, QtGui)
 import json
 import os
@@ -20,10 +18,7 @@ class Menu(MRUDMenu):
 		self.menubar = self.view.menuBar()
 		
 		self.menu_data = self.menubar.addMenu("Data")
-		self.action_load = QtWidgets.QAction(QtGui.QIcon("res\open.svg"), "Load Database", self.view)
-		self.action_load.triggered.connect(self.on_load)
-		self.menu_data.addAction(self.action_load)
-		self.action_connect = QtWidgets.QAction(QtGui.QIcon("res\connect.svg"), "Connect to DB", self.view)
+		self.action_connect = QtWidgets.QAction(QtGui.QIcon("res\connect.svg"), "Connect Data Source", self.view)
 		self.action_connect.setCheckable(True)
 		self.action_connect.triggered.connect(self.on_connect)
 		self.menu_data.addAction(self.action_connect)
@@ -59,13 +54,6 @@ class Menu(MRUDMenu):
 		
 	def update(self):
 		
-		if self.model.data_source is None:
-			self.action_connect.setIcon(QtGui.QIcon("res\connect.svg"))
-			self.action_connect.setChecked(False)
-		else:
-			self.action_connect.setIcon(QtGui.QIcon("res\disconnect.svg"))
-			self.action_connect.setChecked(True)
-		
 		if not self.model.is_connected():
 			self.action_save.setEnabled(False)
 			self.action_save_pdf.setEnabled(False)
@@ -76,10 +64,6 @@ class Menu(MRUDMenu):
 	def on_update(self, *args):
 		
 		self.update()
-	
-	def on_load(self, *args):
-		
-		self.view.toolbar.on_load()
 	
 	def on_connect(self, *args):
 		
@@ -99,6 +83,5 @@ class Menu(MRUDMenu):
 	
 	def on_about(self, *args):
 		
-		dialog = About(self.model, self.view, *args)
-		dialog.show()
+		self.view.dialogs.open("About")
 	

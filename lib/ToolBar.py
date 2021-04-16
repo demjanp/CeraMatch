@@ -15,12 +15,7 @@ class ToolBar(ViewChild):
 		self.toolbar = self.view.addToolBar("ToolBar")
 		self.toolbar.setIconSize(QtCore.QSize(36,36))
 		
-		self.action_load = QtWidgets.QAction(QtGui.QIcon("res\open.svg"), "Load Database", self.view)
-		self.action_load.triggered.connect(self.on_load)
-		self.toolbar.addAction(self.action_load)
-		
-		self.action_connect = QtWidgets.QAction(QtGui.QIcon("res\connect.svg"), "Connect to DB", self.view)
-		self.action_connect.setCheckable(True)
+		self.action_connect = QtWidgets.QAction(QtGui.QIcon("res\connect.svg"), "Connect Data Source", self.view)
 		self.action_connect.triggered.connect(self.on_connect)
 		self.toolbar.addAction(self.action_connect)
 		
@@ -55,13 +50,6 @@ class ToolBar(ViewChild):
 		
 	def update(self):
 		
-		if self.model.data_source is None:
-			self.action_connect.setIcon(QtGui.QIcon("res\connect.svg"))
-			self.action_connect.setChecked(False)
-		else:
-			self.action_connect.setIcon(QtGui.QIcon("res\disconnect.svg"))
-			self.action_connect.setChecked(True)
-		
 		if not self.model.is_connected():
 			self.action_save.setEnabled(False)
 			self.action_save_pdf.setEnabled(False)
@@ -75,23 +63,13 @@ class ToolBar(ViewChild):
 		
 		self.update()
 	
-	def on_load(self, *args):
-		
-		if self.model.dc is None:
-			self.model.launch_deposit()
-		self.model.dc.view.toolbar["Load"].triggered(True)
-	
 	def on_connect(self, *args):
 		
-		if self.model.dc is None:
-			self.model.launch_deposit()
-		self.model.dc.view.toolbar["Connect"].triggered(True)
+		self.view.dialogs.open("Connect")
 	
 	def on_save(self, *args):
-
-		if self.model.dc is None:
-			self.model.launch_deposit()
-		self.model.dc.view.toolbar["Save"].triggered(True)
+		
+		self.view.save()
 	
 	def on_deposit(self, *args):
 		
