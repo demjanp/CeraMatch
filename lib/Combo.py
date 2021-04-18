@@ -3,10 +3,12 @@ from PySide2 import (QtWidgets, QtCore, QtGui)
 
 class Combo(QtWidgets.QComboBox):
 	
-	def __init__(self, callback):
+	def __init__(self, callback, editable = False):
 		
 		QtWidgets.QComboBox.__init__(self)
-		self.currentIndexChanged.connect(callback)
+		
+		self.currentTextChanged.connect(callback)
+		self.setEditable(editable)
 	
 	def clear_values(self):
 		
@@ -17,6 +19,8 @@ class Combo(QtWidgets.QComboBox):
 	def set_values(self, values, default = None):
 		
 		values = [str(val) for val in values]
+		if (default is not None) and (default not in values):
+			values = [default] + values
 		value = self.currentText()
 		if value:
 			default = value

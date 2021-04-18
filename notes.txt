@@ -1,38 +1,25 @@
 
-Toolbar:
-	connect
-	save
-	deposit
-	export tree as PDF
-	export clusters as PDF
-	undo
-	
-Left panel:
-	Class / Descriptors:
-		Sample Class
-		Cluster Class (?)
-		Descriptors - default or load from LAP
-	Calculate Distances
-	Delete Distances
-	
-	Cluster Samples
-		Cluster button
-		N Clusters: dropdown [by-limit, 2 ... n_samples]
-		Limit: [0.68]
+export to PDF
 
-drag sample over cluster -> move to cluster
+import / export clustering to file
 
+update DGeometry.py in Deposit
 
---------------------
+store / load Cluster and Node Class in registry (?)
 
-TODO:
-	auto-clustering: add all drawings without calculated distance into one cluster
-	(?) debug load db first with clusters, then without clusters
+undo function
 
-get_clusters_w - weighted by D, assign single samples first
-get_clusters_w2 - weighted by D, merge clusters only
-get_clusters_s - weighted by PCA, assign single samples first
-get_clusters_s2 - weighted by PCA, merge clusters only
+***
+
+import clusters ->
+	-> store clusters in db
+
+store clusters in db
+	-> CMCluster.contains.Sample
+		CMCluster.Name
+	-> CMNode.linked.CMNode = edge
+		CMNode.Name
+		CMNode.linked.CMCluster
 
 --------------------
 
@@ -41,51 +28,22 @@ connect with Deposit
 Sample.Id
 Sample.Profile
 Sample.Radius
-Sample.Reconstruction
 
 store distances in Deposit
 weight(Sample.diam_dist.Sample) = diam_dist
 weight(Sample.axis_dist.Sample) = axis_dist
 weight(Sample.h_dist.Sample) = h_dist
+weight(Sample.h_rim_dist.Sample) = h_rim_dist
 
 store clustering in Deposit
-CMCluster.contains.Sample
+CMCluster/CMNode.contains.Sample
 CMCluster.Name = [cluster name]
+CMNode.linked.CMNode
+CMNode.Name = [node name]
 
 --------------------
 
-lib.fnc_matching -> 
-
-calc_distances(profiles)
-	# profiles[sample_id] = [profile, radius]
-	
-	axis = profile_axis(profile, rasterize_factor)
-		[describe find axis]
-	
-	keypoints, thickness = find_keypoints(profile, rasterize_factor)
-		[describe find keypoints]
-	
-	# data[sample_id] = [profile, axis, radius, keypoints, thickness]
-	dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax)
-
-dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax)
-	profile1, axis1, radius1, keypoints1, thickness1 = data[sample_ids[i]]
-	profile2, axis2, radius2, keypoints2, thickness2 = data[sample_ids[j]]
-	
-	diam_dist = diameter_dist(axis1, radius1, axis2, radius2)
-		[describe diameter_dist]
-	
-	ax_dist = axis_dist(axis1, axis2)
-		[describe axis dist]
-	
-	h_dist_sum1, h_dist_norm1 = frame_hamming(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
-	h_dist_sum2, h_dist_norm2 = frame_hamming(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
-		[describe hamming dist]
-	
-	h_dist = np.sqrt((h_dist_sum1 + h_dist_sum2) / (h_dist_norm1 + h_dist_norm2))
-
-
-D[i, j] = [diam_dist, ax_dist, h_dist]
+D[i, j] = [diam_dist, ax_dist, h_dist, h_rim_dist]
 
 
 get_clusters(D, limit = 0.68)

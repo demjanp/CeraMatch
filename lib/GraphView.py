@@ -32,7 +32,7 @@ class Node(QtWidgets.QGraphicsItem):
 		self.setAcceptHoverEvents(True)
 		self.setFlag(QtWidgets.QGraphicsItem.ItemIsMovable)
 		self.setFlag(QtWidgets.QGraphicsItem.ItemSendsGeometryChanges)
-		self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
+		self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, False)
 		self.setFlag(QtWidgets.QGraphicsItem.ItemIsFocusable, False)
 		self.setCacheMode(self.DeviceCoordinateCache)
 		self.setZValue(-1)
@@ -150,6 +150,7 @@ class Node(QtWidgets.QGraphicsItem):
 						for leaf in copy(self.children):
 							move_leaf(leaf(), item)
 						self.scene().views()[0].remove_node(self)
+					
 					elif isinstance(self, SampleNode):
 						cluster = self.cluster()
 						move_leaf(self, item)
@@ -158,8 +159,9 @@ class Node(QtWidgets.QGraphicsItem):
 
 class ClusterNode(Node):
 	
-	def __init__(self, node_id, radius = 15):
+	def __init__(self, model, node_id, radius = 15):
 		
+		self.model = weakref.ref(model)
 		self.children = set([])
 		self._prev_pos = None
 		
@@ -179,12 +181,14 @@ class ClusterNode(Node):
 		node_ref = weakref.ref(node)
 		if node_ref not in self.children:
 			self.children.add(node_ref)
+			self.model().clusters.add_child(self.node_id, node.node_id)
 	
 	def remove_child(self, node):
 		
 		node_ref = weakref.ref(node)
 		if node_ref in self.children:
 			self.children.remove(node_ref)
+			self.model().clusters.remove_child(self.node_id, node.node_id)
 	
 	def paint(self, painter, option, widget):
 		
@@ -232,6 +236,7 @@ class SampleNode(Node):
 		self._rect = QtCore.QRectF(self.picture.boundingRect().marginsAdded(QtCore.QMargins(3, 3, 3, 3)))
 		
 		self.setFlag(QtWidgets.QGraphicsItem.ItemIsFocusable, True)
+		self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable, True)
 	
 	def boundingRect(self):
 		
@@ -365,12 +370,17 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		
 		self.scale(factor, factor)
 	
+	def get_selected(self):
+		
+		return self.scene().selectedItems()
+	
 	def remove_node(self, node):
 		
 		node_id = node.node_id
 		self.remove_edges(node)
 		self.scene().removeItem(node)
 		del self._nodes[node_id]
+		self.model.clusters.remove(node_id)
 	
 	def add_edge(self, source_node, target_node):
 		
@@ -391,11 +401,11 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 			self.scene().removeItem(self._edges[idx])
 			del self._edges[idx]
 	
-	def set_data(self, sample_data, nodes, edges, clusters = {}, labels = {}, positions = None, gap = 10):
+	def set_data(self, sample_data, clusters = {}, nodes = [], edges = [], labels = {}, positions = None, gap = 10):
 		# sample_data = {sample_id: [obj_id, descriptors], ...}
+		# clusters = {node_id: [sample_id, ...], ...}
 		# nodes = [node_id, ...]
 		# edges = [[source_id, target_id], ...]
-		# clusters = {node_id: [sample_id, ...], ...}
 		# labels = {node_id: label, ...}
 		# positions = {node_id: (x, y), ...} or None
 		
@@ -410,7 +420,9 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 				done.add(source_id)
 				done.add(target_id)
 			for node_id in done:
-				if node_id not in sample_data:
+				if not node_id.startswith("@"):
+					continue
+				if node_id[1:] not in sample_data:
 					continue
 				rect = self._nodes[node_id].boundingRect()
 				mul = 0.013  # TODO find a way to calculate
@@ -461,14 +473,21 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		
 		self.clear()
 		
+		if not nodes:
+			nodes = set([])
+			for sample_id in sample_data:
+				node_id = "@%s" % (sample_id)
+				nodes.add(node_id)
+				labels[node_id] = str(sample_id)
+		
 		self._labels = labels
 		nodes = set(nodes)
-		nodes.update(list(sample_data.keys()))
+		nodes.update(["@%s" % (sample_id) for sample_id in sample_data])
 		for node_id in nodes:
-			if node_id in sample_data:
-				self._nodes[node_id] = SampleNode(node_id, sample_data[node_id][1])
+			if node_id.startswith("@") and (node_id[1:] in sample_data):
+				self._nodes[node_id] = SampleNode(node_id, sample_data[node_id[1:]][1])
 			elif node_id in clusters:
-				self._nodes[node_id] = ClusterNode(node_id)
+				self._nodes[node_id] = ClusterNode(self.model, node_id)
 			else:
 				self._nodes[node_id] = Node(node_id)
 			self.scene().addItem(self._nodes[node_id])
@@ -488,17 +507,64 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		
 		self.reset_scene()
 	
+	def add_cluster(self):
+		
+		children = copy(self.get_selected())
+		
+		x_mean = 0
+		y_max = -np.inf
+		w_max = 0
+		h_max = 0
+		for node in children:
+			rect = node.boundingRect()
+			pos = node.pos()
+			x, y = pos.x(), pos.y()
+			h = rect.height()
+			w = rect.width()
+			x_mean += x
+			y_max = max(y_max, y + h)
+			w_max = max(w_max, w)
+			h_max = max(h_max, h)
+		x_mean /= len(children)
+		cx, cy = x_mean, y_max + 3
+		cluster_id = "#%d" % (max([int(node_id[1:]) if node_id.startswith("#") else 0 for node_id in self._nodes]) + 1)
+		self._nodes[cluster_id] = ClusterNode(self.model, cluster_id)
+		self.scene().addItem(self._nodes[cluster_id])
+		self._nodes[cluster_id].setPos(cx, cy)
+		
+		cluster = self._nodes[cluster_id]
+		dx = 0
+		side = 1
+		cy += h_max
+		for node in children:
+			dx += w_max / 2
+			side *= -1
+			node.setPos(cx + dx * side, cy)
+			old_cluster = node.cluster
+			if old_cluster is not None:
+				old_cluster = old_cluster()
+				old_cluster.remove_child(node)
+				if not old_cluster.children:
+					self.remove_node(old_cluster)
+					self.model.clusters.remove(old_cluster.node_id)
+			cluster.add_child(node)
+			node.set_cluster(cluster)
+			self.remove_edges(node)
+			self.add_edge(node, cluster)
+		
+		self.model.clusters.add_cluster(cluster_id, [node.node_id for node in children])
+	
 	def on_hover_item(self, item):
 		
 		if item.node_id in self._labels:
-			self.view.statusbar.message("%s - %s" % (self._labels[item.node_id], item.node_id))
+			self.view.statusbar.message(str(self._labels[item.node_id]))
 		else:
 			self.view.statusbar.message(str(item.node_id))
 	
 	@QtCore.Slot()
 	def on_selected(self):
 		
-		pass
+		self.view.update()
 	
 	def on_store_changed(self, *args):
 		

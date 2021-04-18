@@ -8,7 +8,7 @@ from sklearn.decomposition import PCA
 from skimage.morphology import skeletonize, dilation, square
 from skimage import measure
 from scipy.spatial.distance import cdist, pdist, squareform
-from scipy.cluster.hierarchy import linkage, fcluster
+from scipy.cluster.hierarchy import linkage
 from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
 import networkx as nx
@@ -566,6 +566,9 @@ def calc_distances(profiles, distance = None):
 
 def get_clusters(D, max_clusters = None, limit = 0.68):
 	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# max_clusters = maximum number of clusters to form
+	# limit = maximum morphometric distance between members of one clusters (used only if max_clusters is not specified)
+	# 
 	# returns clusters, nodes, edges, labels
 	# 
 	# clusters = {node_idx: [sample_idx, ...], ...}; sample_idx = index in sample_ids
@@ -573,9 +576,9 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 	# edges = [(source_idx, target_idx), ...]
 	# labels = {node_idx: label, ...}
 	
-	def _calc_dist(cluster1, cluster2, D, D_sq, limit = None):
+	def _calc_dist(cluster1, cluster2, D, d_sq, limit = None):
 		
-		cluster12 = np.hstack((cluster1, cluster2))
+		cluster12 = cluster1 + cluster2
 		
 		if limit is not None:
 			if D[:,cluster12][cluster12].max() > limit:
@@ -584,8 +587,7 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 		# calculate centroid distance
 		n1 = len(cluster1)
 		n2 = len(cluster2)
-		cluster12 = np.hstack((cluster1, cluster2))
-		d = np.sqrt((D_sq[:,cluster12][cluster12].sum() - (n1 + n2)*(D_sq[:,cluster1][cluster1].sum() / n1 + D_sq[:,cluster2][cluster2].sum() / n2)) / (n1*n2))*0.7061
+		d = np.sqrt((d_sq[:,cluster12][cluster12].sum() - (n1 + n2)*(d_sq[:,cluster1][cluster1].sum() / n1 + d_sq[:,cluster2][cluster2].sum() / n2)) / (n1*n2))
 		
 		return d
 	
@@ -605,22 +607,26 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 	D[mask] = 0
 	D = D / D.mean(axis = (0,1))
 	
-	D_sq = D**2
+	d_sq = (D**2).sum(axis = 2)
 	
 	limit = D.mean() * limit
 	
 	clusters = dict([(idx, [idx]) for idx in range(n_samples)])
 	
-	d_comb = np.full((len(clusters), len(clusters)), np.inf, dtype = float)
-	for idx1, idx2 in combinations(list(clusters.keys()), 2):
-		d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D, D_sq, limit)
+	to_update = set([])
+	d_comb = np.sqrt(d_sq)
+	if max_clusters is None:
+		d_comb[D.max(axis = 2) > limit] = np.inf
+		for idx1, idx2 in np.argwhere(np.triu(d_comb) == np.inf):
+			to_update.add((idx1, idx2))
+	d_comb[np.diag_indices(n_samples)] = np.inf
 	
 	cmax = n_samples + 1
 	cnt = 1
 	
-	joins_matrix = np.zeros(d_comb.shape, dtype = bool)
 	while (max_clusters is None) or (len(clusters) > max_clusters):
-		print("\r%d/%d           " % (cnt, cmax), end = "")
+		if cnt % 10 == 0:
+			print("\r%d/%d           " % (cnt, cmax), end = "")
 		cnt += 1
 		
 		idx1, idx2 = np.argwhere(d_comb == d_comb.min())[0]
@@ -630,27 +636,24 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 		d_comb[idx2,idx1] = np.inf
 		d_comb[idx2] = np.inf
 		d_comb[:,idx2] = np.inf
-		joins_matrix[idx1,idx2] = True
-		joins_matrix[idx2,idx1] = True
-		joins_matrix[idx2] = True
-		joins_matrix[:,idx2] = True
 		clusters[idx1] = clusters[idx1] + clusters[idx2]
 		del clusters[idx2]
 		
 		for idx2 in clusters:
 			if (idx2 == idx1):
 				continue
-			if joins_matrix[idx1, idx2]:
+			if d_comb[idx1,idx2] == np.inf:
 				continue
-			d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D, D_sq, limit if max_clusters is None else None)
+			d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D, d_sq, limit if max_clusters is None else None)
 			d_comb[idx2,idx1] = d_comb[idx1,idx2]
+			if (max_clusters is None) and (d_comb[idx1,idx2] == np.inf):
+				to_update.add((idx1, idx2))
 	
 	if max_clusters is None:
-		for idx1, idx2 in combinations(list(clusters.keys()), 2):
-			if (joins_matrix[idx1, idx2] and joins_matrix[idx2, idx1]):
-				continue
-			d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D, D_sq)
-			d_comb[idx2,idx1] = d_comb[idx1,idx2]
+		for idx1, idx2 in to_update:
+			if (idx1 in clusters) and (idx2 in clusters):
+				d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D, d_sq)
+				d_comb[idx2,idx1] = d_comb[idx1,idx2]
 	
 	clusters_lookup = dict([(idx, n_samples + i) for i, idx in enumerate(sorted(clusters.keys()))])
 	joined_clusters = dict([(clusters_lookup[idx], clusters_lookup[idx]) for idx in clusters_lookup])
@@ -658,7 +661,8 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 	joins = {}
 	z_idx = max(clusters_lookup.values()) + 1
 	while True:
-		print("\r%d/%d           " % (cnt, cmax), end = "")
+		if cnt % 10 == 0:
+			print("\r%d/%d           " % (cnt, cmax), end = "")
 		cnt += 1
 		
 		idx1, idx2 = np.argwhere(d_comb == d_comb.min())[0]
@@ -702,13 +706,131 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 		for idx_clu in joins[z_idx]:
 			labels[idx_clu] = labels[z_idx] + [idx_clu]
 	
-	d_comb = np.sqrt((D**2).sum(axis = 2))
-	collect = {}
-	for z_idx in clusters:
-		collect[z_idx] = d_comb[:,clusters[z_idx]][clusters[z_idx]].mean(axis = 0)
-	d_comb = collect
+	d_clu = dict([(z_idx, d_sq[:,clusters[z_idx]][clusters[z_idx]].mean(axis = 0)) for z_idx in clusters])
 	
-	clusters = dict([(z_idx, sorted(clusters[z_idx], key = lambda idx: d_comb[z_idx][clusters[z_idx].index(idx)])) for z_idx in clusters])
+	clusters = dict([(z_idx, sorted(clusters[z_idx], key = lambda idx: d_clu[z_idx][clusters[z_idx].index(idx)])) for z_idx in clusters])
+	
+	for z_idx in clusters:
+		for n, idx in enumerate(clusters[z_idx]):
+			labels[idx] = labels[z_idx] + [str(n + 1)]
+	
+	labels = dict([(idx, _join_label(labels[idx])) for idx in labels])
+	
+	return clusters, nodes, edges, labels
+
+def update_clusters(D, clusters):
+	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# clusters = {label: [sample_idx, ...], ...}; sample_idx = index in sample_ids
+	# 
+	# returns clusters, nodes, edges, labels
+	# 
+	# clusters = {node_idx: [sample_idx, ...], ...}; sample_idx = index in sample_ids
+	# nodes = [node_idx, ...]
+	# edges = [(source_idx, target_idx), ...]
+	# labels = {node_idx: label, ...}
+	
+	def _calc_dist(cluster1, cluster2, d_sq):
+		
+		cluster12 = cluster1 + cluster2
+		
+		# calculate centroid distance
+		n1 = len(cluster1)
+		n2 = len(cluster2)
+		d = np.sqrt((d_sq[:,cluster12][cluster12].sum() - (n1 + n2)*(d_sq[:,cluster1][cluster1].sum() / n1 + d_sq[:,cluster2][cluster2].sum() / n2)) / (n1*n2))
+		
+		return d
+	
+	def _join_label(label):
+		
+		return ".".join([str(val) for val in label])
+	
+	n_samples = D.shape[0]
+	
+	D[np.diag_indices(n_samples)] = 0
+	mask = (D == 0)
+	mins = []
+	for idx in range(D.shape[2]):
+		d = D[:,:,idx]
+		mins.append(d[d > 0].min())
+	D = D - mins
+	D[mask] = 0
+	D = D / D.mean(axis = (0,1))
+	
+	d_sq = (D**2).sum(axis = 2)
+	
+	samples_found = set([])
+	for label in clusters:
+		samples_found.update(clusters[label])
+	clusters = dict([(i, clusters[idx]) for i, idx in enumerate(sorted(clusters.keys()))])
+	# make sure each sample is in a cluster
+	idx_clu = len(clusters)
+	for idx in range(n_samples):
+		if idx not in samples_found:
+			clusters[idx_clu] = [idx]
+			idx_clu += 1
+	
+	d_comb = np.full((n_samples, n_samples), np.inf, dtype = float)
+	for idx1, idx2 in combinations(list(clusters.keys()), 2):
+		d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D)
+		d_comb[idx2,idx1] = d_comb[idx1,idx2]
+	
+	clusters_lookup = dict([(idx, n_samples + i) for i, idx in enumerate(sorted(clusters.keys()))])
+	joined_clusters = dict([(clusters_lookup[idx], clusters_lookup[idx]) for idx in clusters_lookup])
+	
+	cmax = len(clusters) + 1
+	cnt = 1
+	
+	joins = {}
+	z_idx = max(clusters_lookup.values()) + 1
+	while True:
+		if cnt % 10 == 0:
+			print("\r%d/%d           " % (cnt, cmax), end = "")
+		cnt += 1
+		
+		idx1, idx2 = np.argwhere(d_comb == d_comb.min())[0]
+		if d_comb[idx1,idx2] == np.inf:
+			break
+		d_comb[idx1,idx2] = np.inf
+		d_comb[idx2,idx1] = np.inf
+		d_comb[idx2] = np.inf
+		d_comb[:,idx2] = np.inf
+		
+		joins[z_idx] = [joined_clusters[clusters_lookup[idx1]], joined_clusters[clusters_lookup[idx2]]]
+		joined_clusters[clusters_lookup[idx1]] = z_idx
+		joined_clusters[clusters_lookup[idx2]] = z_idx
+		
+		z_idx += 1
+	z_idx_max = z_idx
+	
+	clusters = dict([(clusters_lookup[idx], clusters[idx]) for idx in clusters])
+	
+	edges = set([])
+	parents = {}
+	for z_idx in joins:
+		for idx in joins[z_idx]:
+			parents[idx] = z_idx
+			edges.add((z_idx, idx))
+	for z_idx in clusters:
+		for idx in clusters[z_idx]:
+			edges.add((z_idx, idx))
+	
+	nodes = set([])
+	for row in edges:
+		nodes.update(list(row))
+	
+	labels = {}
+	parent_chains = {}
+	for z_idx in joins:
+		parent_chains[z_idx] = [z_idx]
+		while parent_chains[z_idx][-1] in parents:
+			parent_chains[z_idx].append(parents[parent_chains[z_idx][-1]])
+		labels[z_idx] = [(z_idx_max - val) for val in parent_chains[z_idx][::-1]]
+		for idx_clu in joins[z_idx]:
+			labels[idx_clu] = labels[z_idx] + [idx_clu]
+	
+	d_clu = dict([(z_idx, d_sq[:,clusters[z_idx]][clusters[z_idx]].mean(axis = 0)) for z_idx in clusters])
+	
+	clusters = dict([(z_idx, sorted(clusters[z_idx], key = lambda idx: d_clu[z_idx][clusters[z_idx].index(idx)])) for z_idx in clusters])
 	
 	for z_idx in clusters:
 		for n, idx in enumerate(clusters[z_idx]):

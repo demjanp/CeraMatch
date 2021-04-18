@@ -3,11 +3,10 @@ from lib.dialogs._Dialogs import (Dialogs)
 from lib.ToolBar import (ToolBar)
 from lib.Menu import (Menu)
 from lib.DescriptorGroup import (DescriptorGroup)
+from lib.DistanceGroup import (DistanceGroup)
 from lib.ClusterGroup import (ClusterGroup)
 from lib.GraphView import (GraphView)
 from lib.StatusBar import (StatusBar)
-from lib.Button import (Button)
-
 
 from deposit import Broadcasts
 from deposit.commander.Registry import (Registry)
@@ -29,16 +28,14 @@ class View(DModule, QtWidgets.QMainWindow):
 		
 		self.dialogs = Dialogs(self)
 		self.registry = Registry("Deposit")
-		self.descriptor_group = DescriptorGroup(self)
-		self.cluster_group = ClusterGroup(self)
 		self.graph_view = GraphView(self)
+		self.descriptor_group = DescriptorGroup(self)
+		self.distance_group = DistanceGroup(self)
+		self.cluster_group = ClusterGroup(self)
 		self.menu = Menu(self)
 		self.toolbar = ToolBar(self)
 		self.statusbar = StatusBar(self)
 		self.progress = None
-		
-		self.calculate_button = Button("Calculate Distances", self.on_calculate)
-		self.calculate_button.setEnabled(False)
 		
 		self.setWindowIcon(QtGui.QIcon("res\cm_icon.svg"))
 		self.setStyleSheet("QPushButton {padding: 5px; min-width: 100px;}")
@@ -61,12 +58,8 @@ class View(DModule, QtWidgets.QMainWindow):
 		central_widget.layout().addWidget(control_frame)
 		central_widget.layout().addWidget(graph_view_frame)
 		
-		calculate_group = QtWidgets.QGroupBox("Calculate")
-		calculate_group.setLayout(QtWidgets.QVBoxLayout())
-		calculate_group.layout().addWidget(self.calculate_button)
-		
 		control_frame.layout().addWidget(self.descriptor_group)
-		control_frame.layout().addWidget(calculate_group)
+		control_frame.layout().addWidget(self.distance_group)
 		control_frame.layout().addWidget(self.cluster_group)
 		control_frame.layout().addStretch()
 		
@@ -79,7 +72,13 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.setGeometry(500, 100, 1024, 768)  # DEBUG
 		
 		self.descriptor_group.load_data.connect(self.on_load_data)
+		self.descriptor_group.cluster_classes_changed.connect(self.on_cluster_classes_changed)
+		self.distance_group.calculate.connect(self.on_calculate)
+		self.distance_group.delete.connect(self.on_delete_distance)
 		self.cluster_group.cluster.connect(self.on_cluster)
+		self.cluster_group.update_tree.connect(self.on_update_tree)
+		self.cluster_group.add_cluster.connect(self.on_add_cluster)
+		self.cluster_group.delete.connect(self.on_delete_clusters)
 		
 		self.connect_broadcast(Broadcasts.VIEW_ACTION, self.on_view_action)
 		self.connect_broadcast(Broadcasts.STORE_LOADED, self.on_data_source_changed)
@@ -119,7 +118,9 @@ class View(DModule, QtWidgets.QMainWindow):
 	def update(self):
 		
 		self.set_title(os.path.split(str(self.model.identifier))[-1].strip("#"))
-		self.calculate_button.setEnabled(self.model.has_samples() and (not self.model.has_distance()))
+		self.descriptor_group.update()
+		self.distance_group.update()
+		self.cluster_group.update()
 	
 	def save(self):
 		
@@ -135,30 +136,61 @@ class View(DModule, QtWidgets.QMainWindow):
 	def on_load_data(self):
 		
 		self.show_progress("Loading...")
-		if self.descriptor_group.lap_descriptors is not None:
-			self.model.load_samples(self.descriptor_group.lap_descriptors)
+		nodes = None
+		if self.model.lap_descriptors is not None:
+			clusters, nodes, edges, labels = self.model.load_samples()
 		
-		labels = dict([(str(sample_id), sample_id) for sample_id in self.model.sample_ids])
-		self.graph_view.set_data(self.model.sample_data, self.model.sample_ids, [], labels = labels)
-		# TODO load clustering if available
+		if nodes is None:
+			self.graph_view.set_data(self.model.sample_data)
+			self.cluster_group.update_clusters_found(None)
+		else:
+			self.cluster_group.update_clusters_found(len(clusters))
+			self.graph_view.set_data(self.model.sample_data, clusters, nodes, edges, labels)
 		
 		self.descriptor_group.update()
+		self.distance_group.update()
+		self.cluster_group.update()
 		self.cluster_group.update_n_clusters()
-		self.cluster_group.update_clusters_found(None)
+		
 		self.update()
 		self.hide_progress()
+	
+	@QtCore.Slot()
+	def on_cluster_classes_changed(self):
+		
+		self.cluster_group.update()
 	
 	@QtCore.Slot()
 	def on_cluster(self):
 		
 		self.show_progress("Clustering...")
 		self.cluster_group.update_clusters_found(None)
-		nodes, edges, clusters, labels = self.model.get_clusters(*self.cluster_group.get_limits())
-		if nodes is None:
-			return
-		self.cluster_group.update_clusters_found(len(clusters))
-		self.graph_view.set_data(self.model.sample_data, nodes, edges, clusters, labels)
+		max_clusters, limit = self.cluster_group.get_limits()
+		clusters, nodes, edges, labels = self.model.clusters.make(max_clusters, limit)
+		if nodes is not None:
+			self.cluster_group.update_clusters_found(len(clusters))
+			self.graph_view.set_data(self.model.sample_data, clusters, nodes, edges, labels)
+		self.update()
 		self.hide_progress()
+	
+	@QtCore.Slot()
+	def on_update_tree(self):
+		
+		self.show_progress("Updating...")
+		clusters, nodes, edges, labels = self.model.clusters.update()
+		if nodes is None:
+			self.graph_view.set_data(self.model.sample_data)
+			self.cluster_group.update_clusters_found(None)			
+		else:
+			self.graph_view.set_data(self.model.sample_data, clusters, nodes, edges, labels)
+			self.cluster_group.update_clusters_found(len(clusters))
+		self.update()
+		self.hide_progress()
+	
+	@QtCore.Slot()
+	def on_add_cluster(self):
+		
+		self.graph_view.add_cluster()
 	
 	@QtCore.Slot()
 	def on_calculate(self):
@@ -167,6 +199,28 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.model.calc_distance()
 		self.update()
 		self.hide_progress()
+	
+	@QtCore.Slot()
+	def on_delete_distance(self):
+		
+		reply = QtWidgets.QMessageBox.question(self, "Delete Distances", "Delete distances from database?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+		if reply == QtWidgets.QMessageBox.Yes:
+			self.show_progress("Deleting...")
+			self.model.delete_distance()
+			self.update()
+			self.hide_progress()
+	
+	@QtCore.Slot()
+	def on_delete_clusters(self):
+		
+		reply = QtWidgets.QMessageBox.question(self, "Delete Clusters", "Delete clusters from database?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+		if reply == QtWidgets.QMessageBox.Yes:
+			self.show_progress("Deleting...")
+			self.model.clusters.delete()
+			labels = dict([(str(sample_id), sample_id) for sample_id in self.model.sample_ids])
+			self.graph_view.set_data(self.model.sample_data)
+			self.update()
+			self.hide_progress()
 	
 	def on_view_action(self, *args):
 		
