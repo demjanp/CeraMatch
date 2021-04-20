@@ -12,6 +12,7 @@ from scipy.cluster.hierarchy import linkage
 from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
 import networkx as nx
+import time
 
 def get_rim(profile):
 	
@@ -462,7 +463,7 @@ def hamming_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor
 	
 	return h_dist_sum, h_dist_norm
 
-def dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax):
+def dist_worker(ijs_mp, collect_mp, data, sample_ids):
 	
 	rasterize_factor = 4
 	profiles_n = len(data)
@@ -472,8 +473,6 @@ def dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax):
 			i, j = ijs_mp.pop()
 		except:
 			break
-		cnt = cmax - len(ijs_mp)
-		print("\rprocessing {:d}/{:d} ({:%})          ".format(cnt, cmax, cnt / cmax), end = "")
 		
 		profile1, axis1, radius1, keypoints1, thickness1 = data[sample_ids[i]]
 		profile2, axis2, radius2, keypoints2, thickness2 = data[sample_ids[j]]
@@ -505,14 +504,31 @@ def dist_worker(ijs_mp, collect_mp, data, sample_ids, cmax):
 		
 	collect_mp.append(distance)
 	
-def calc_distances(profiles, distance = None):
+def calc_distances(profiles, distance = None, progress = None):
 	# profiles[sample_id] = [profile, radius]
 	# returns distance[i, j] = [diam_dist, ax_dist, h_dist, h_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	
+	def _update_progress(ijs_mp, procs):
+		
+		cnt = cmax - len(ijs_mp)
+		if progress is None:
+			print("\rclustering %d/%d            " % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Calculating Distances...", value = max(0, cnt - 1), maximum = cmax)
+			if progress.cancel_pressed():
+				for proc in procs:
+					proc.terminate()
+					proc = None
+				return -1
+		return cnt
 	
 	rasterize_factor = 10
 	
 	profiles_n = len(profiles)
 	sample_ids = list(profiles.keys())
+	
+	cmax = profiles_n
+	progress.update_state(text = "Analyzing Profiles...", value = 0, maximum = cmax)
 	
 	manager = mp.Manager()
 	if distance is None:
@@ -528,11 +544,8 @@ def calc_distances(profiles, distance = None):
 		ijs_mp = manager.list(ijs)
 	
 	data = {} # {sample_id: [profile, axis, radius, keypoints, thickness], ...}
-	cmax = len(profiles)
 	cnt = 1
 	for sample_id in profiles:
-		print("\rpreparing data {:0.0%}".format(cnt / cmax), end = "")
-		cnt += 1
 		profile, radius = profiles[sample_id]
 		axis, thickness = profile_axis(profile, rasterize_factor)
 		if axis.shape[0] < 10:
@@ -541,13 +554,39 @@ def calc_distances(profiles, distance = None):
 		axis = axis - axis[0]
 		keypoints = find_keypoints(profile, axis, thickness)
 		data[sample_id] = [profile, axis, radius, keypoints, thickness]
+		
+		if progress is None:
+			print("\rpreparing data %d/%d" % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Analyzing Profiles...", value = cnt, maximum = cmax)
+			if progress.cancel_pressed():
+				return None
+		cnt += 1
+	
+	if progress is not None:
+		progress.update_state(text = "Calculating Distances...", value = 0, maximum = cmax)
 	collect_mp = manager.list()
 	cmax = len(ijs_mp)
 	procs = []
 #	for pi in range(mp.cpu_count()):
 	for pi in range(min(30, mp.cpu_count())):
-		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids, cmax)))
+		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids)))
 		procs[-1].start()
+		cnt = _update_progress(ijs_mp, procs)
+		if cnt == -1:
+			return None
+	
+	progress.update_state(text = "Calculating Distances...", value = 0, maximum = cmax)
+	
+	cnt = 1
+	while cnt < cmax:
+		cnt = _update_progress(ijs_mp, procs)
+		if cnt == -1:
+			return None
+		time.sleep(0.1)
+	
+	progress.update_state(text = "Calculating Distances...", value = cmax - 1, maximum = cmax)
+	
 	for proc in procs:
 		proc.join()
 	for proc in procs:
@@ -562,9 +601,11 @@ def calc_distances(profiles, distance = None):
 		mask = (dist != -2)
 		distance[mask] = dist[mask]
 	
+	progress.update_state(text = "Calculating Distances...", value = cmax, maximum = cmax)
+	
 	return distance
 
-def get_clusters(D, max_clusters = None, limit = 0.68):
+def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
 	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	# max_clusters = maximum number of clusters to form
 	# limit = maximum morphometric distance between members of one clusters (used only if max_clusters is not specified)
@@ -625,8 +666,12 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 	cnt = 1
 	
 	while (max_clusters is None) or (len(clusters) > max_clusters):
-		if cnt % 10 == 0:
-			print("\r%d/%d           " % (cnt, cmax), end = "")
+		if progress is None:
+			print("\rclustering %d/%d            " % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Clustering...", value = cnt, maximum = cmax)
+			if progress.cancel_pressed():
+				return None, None, None, None
 		cnt += 1
 		
 		idx1, idx2 = np.argwhere(d_comb == d_comb.min())[0]
@@ -661,8 +706,12 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 	joins = {}
 	z_idx = max(clusters_lookup.values()) + 1
 	while True:
-		if cnt % 10 == 0:
-			print("\r%d/%d           " % (cnt, cmax), end = "")
+		if progress is None:
+			print("\rclustering %d/%d            " % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Clustering...", value = cnt, maximum = cmax)
+			if progress.cancel_pressed():
+				return None, None, None, None
 		cnt += 1
 		
 		idx1, idx2 = np.argwhere(d_comb == d_comb.min())[0]
@@ -718,7 +767,7 @@ def get_clusters(D, max_clusters = None, limit = 0.68):
 	
 	return clusters, nodes, edges, labels
 
-def update_clusters(D, clusters):
+def update_clusters(D, clusters, progress = None):
 	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	# clusters = {label: [sample_idx, ...], ...}; sample_idx = index in sample_ids
 	# 
@@ -783,8 +832,12 @@ def update_clusters(D, clusters):
 	joins = {}
 	z_idx = max(clusters_lookup.values()) + 1
 	while True:
-		if cnt % 10 == 0:
-			print("\r%d/%d           " % (cnt, cmax), end = "")
+		if progress is None:
+			print("\rclustering %d/%d            " % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Clustering...", value = cnt, maximum = cmax)
+			if progress.cancel_pressed():
+				return None, None, None, None
 		cnt += 1
 		
 		idx1, idx2 = np.argwhere(d_comb == d_comb.min())[0]

@@ -2,7 +2,7 @@
 from lib.fnc_drawing import *
 from lib.fnc_matching import *
 
-from lib.Clusters import (Clusters)
+from lib.Clustering import (Clustering)
 
 from deposit import (Broadcasts)
 from deposit.store.Store import (Store)
@@ -19,7 +19,7 @@ class Model(Store):
 		self.view = view
 		self.dc = None
 		
-		self.clusters = None
+		self.clustering = None
 		
 		self.lap_descriptors = None
 		self.cluster_class = None
@@ -43,7 +43,7 @@ class Model(Store):
 		
 		Store.__init__(self, parent = self.view)
 		
-		self.clusters = Clusters(self)
+		self.clustering = Clustering(self)
 		
 		self.broadcast_timer = QtCore.QTimer()
 	
@@ -80,7 +80,7 @@ class Model(Store):
 	
 	def has_clusters(self):
 		
-		return self.clusters.has_clusters()
+		return self.clustering.has_clusters()
 	
 	def load_lap_descriptors(self, descriptors = None, sample_cls = None):
 		
@@ -104,7 +104,7 @@ class Model(Store):
 	
 	def clear_samples(self):
 		
-		self.clusters.clear()
+		self.clustering.clear()
 		
 		self.sample_ids = []
 		self.sample_data = {}
@@ -123,11 +123,22 @@ class Model(Store):
 			profile = get_reduced(profile, 0.5)
 			profile = get_interpolated(profile, 0.5)
 			profiles[sample_id] = [profile, radius]
-		self.distance = calc_distances(profiles, self.distance)
+		self.distance = calc_distances(profiles, self.distance, progress = self.view.progress)
+		
+		if self.distance is None:
+			self._has_distance = False
+			return
 		
 		self._has_distance = (not (self.distance == np.inf).any())
 		
-		for i, j in combinations(range(len(self.sample_ids)), 2):
+		ijs = list(combinations(range(len(self.sample_ids)), 2))
+		cmax = len(ijs)
+		cnt = 1
+		for i, j in ijs:
+			self.view.progress.update_state(text = "Saving Distances...", value = cnt, maximum = cmax)
+			if self.view.progress.cancel_pressed():
+				return
+			cnt += 1
 			obj_id1 = self.sample_data[self.sample_ids[i]][0]
 			obj_id2 = self.sample_data[self.sample_ids[j]][0]
 			for k, name in enumerate(self.dist_rels):
@@ -137,11 +148,18 @@ class Model(Store):
 	
 	def delete_distance(self):
 		
+		self._has_distance = False
+		self.distance = None
+		cmax = len(self.sample_data)
+		cnt = 1
 		for sample_id in self.sample_data:
+			self.view.progress.update_state(text = "Deleting...", value = cnt, maximum = cmax)
+			if self.view.progress.cancel_pressed():
+				return
+			cnt += 1
 			obj = self.objects[self.sample_data[sample_id][0]]
 			for rel in self.dist_rels:
 				obj.del_relation(rel)
-		self._has_distance = False
 	
 	def load_distance(self):
 		
@@ -206,7 +224,16 @@ class Model(Store):
 			return None, None, None, None, None
 		
 		sample_cls, id_descr = self.lap_descriptors["Custom_Id"]
+		cnt = 1
+		cmax = len(self.classes[sample_cls].objects)
 		for obj_id in self.classes[sample_cls].objects:
+			
+			self.view.progress.update_state(text = "Loading...", value = cnt, maximum = cmax)
+			cnt += 1
+			if self.view.progress.cancel_pressed():
+				self.clear_samples()
+				return None, None, None, None, None
+			
 			sample_id, descriptors = load_drawing_data(self, self.lap_descriptors, obj_id)
 			if sample_id is None:
 				continue
@@ -218,11 +245,11 @@ class Model(Store):
 			self.sample_ids.append(sample_id)
 			self.sample_data[sample_id] = [obj_id, descriptors]
 		
-		self.clusters.update_samples()
+		self.clustering.update_samples()
 		
 		self.load_distance()
 		
-		return self.clusters.load()
+		return self.clustering.load()
 	
 	def launch_deposit(self):
 		

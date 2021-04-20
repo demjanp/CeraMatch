@@ -4,6 +4,7 @@ from PySide2 import (QtCore, QtGui, QtPrintSupport)
 from collections import defaultdict
 from natsort import natsorted
 import numpy as np
+import os
 
 RIM_GAP = 5
 BREAK_GAP = 3
@@ -51,6 +52,7 @@ def get_lap_descriptors(lap_descriptors = None):
 	return lap_descriptors_dict
 
 def load_drawing_data(store, lap_descriptors, obj_id):
+	# returns sample_id, descriptors
 	
 	descriptors = dict(
 		profile = {}, # {Profile_Geometry, Profile_Rim, Profile_Bottom, Profile_Radius, Profile_Radius_Point, Profile_Rim_Point, Profile_Bottom_Point, Arc_Geometry: []}
@@ -305,7 +307,7 @@ def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale
 	for coords in breaks:
 		draw_polygon(coords, closed = False)
 	
-def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width = 0.5):
+def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width = 0.5, progress = None):
 	# sample_data = {sample_id: [obj_id, descriptors], ...}
 	#	descriptors = {
 	#		profile = {Profile_Geometry, Profile_Rim, Profile_Bottom, Profile_Radius, Profile_Radius_Point, Profile_Rim_Point, Profile_Bottom_Point, Arc_Geometry: []}
@@ -342,8 +344,14 @@ def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width
 	cnt = 1
 	drawings = {}
 	for sample_id in sample_ids:
-		print("\rrendering %d/%d            " % (cnt, cmax), end = "")
+		if progress is None:
+			print("\rrendering %d/%d            " % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Rendering...", value = cnt, maximum = cmax)
+			if progress.cancel_pressed():
+				return
 		cnt += 1
+		
 		drawings[sample_id] = get_picture(sample_id, sample_data[sample_id][1], scale, line_width)
 	
 	printer = QtPrintSupport.QPrinter()
@@ -367,7 +375,14 @@ def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width
 	h_max_row = 0
 	
 	for label in labels:
-		print("\rrendering %d/%d            " % (cnt, cmax), end = "")
+		if progress is None:
+			print("\rrendering %d/%d            " % (cnt, cmax), end = "")
+		else:
+			progress.update_state(text = "Rendering...", value = cnt, maximum = cmax)
+			if progress.cancel_pressed():
+				painter.end()
+				os.remove(path)
+				return
 		cnt += 1
 		
 		x = 0

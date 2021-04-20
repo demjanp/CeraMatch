@@ -4,6 +4,8 @@ from deposit.DModule import (DModule)
 from lib.toolbar.Connect import Connect
 from lib.toolbar.Save import Save
 from lib.toolbar.Deposit import Deposit
+from lib.toolbar.Undo import Undo
+from lib.toolbar.Redo import Redo
 from lib.toolbar.ImportClustering import ImportClustering
 from lib.toolbar.ExportClustering import ExportClustering
 from lib.toolbar.ExportDendrogram import ExportDendrogram
@@ -19,7 +21,10 @@ class Toolbar(DModule):
 	
 	TOOLS = {
 		"Data": [
-			Connect, Save, Deposit, Separator, ImportClustering, ExportClustering, Separator, ExportDendrogram, ExportCatalog,
+			Connect, Save, Deposit, Separator,
+			Undo, Redo, Separator,
+			ImportClustering, ExportClustering, Separator,
+			ExportDendrogram, ExportCatalog,
 		],
 	}
 	

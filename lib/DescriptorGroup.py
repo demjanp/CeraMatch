@@ -35,7 +35,6 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 		
 		self.view = view
 		self.model = view.model
-		self.changed = False
 		
 		DModule.__init__(self)
 		QtWidgets.QGroupBox.__init__(self, "Class / Descriptors")
@@ -88,16 +87,11 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	
 	def load_descriptors(self, descriptors = None):
 		
-		prev = copy(self.model.lap_descriptors)
-		
 		sample_cls = self.sample_class_combo.get_value()
 		self.model.load_lap_descriptors(descriptors, sample_cls)
 		
 		for row in range(self.descriptors_frame.layout().rowCount())[::-1]:
 			self.descriptors_frame.layout().removeRow(row)
-		
-		if self.model.lap_descriptors != prev:
-			self.changed = True
 		
 		if self.model.lap_descriptors is not None:
 			for name in self.model.lap_descriptors:
@@ -105,7 +99,7 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	
 	def update(self):
 		
-		self.load_data_button.setEnabled(self.model.is_connected() and self.changed and (self.model.lap_descriptors is not None))
+		self.load_data_button.setEnabled(self.model.is_connected() and (self.model.lap_descriptors is not None))
 	
 	def update_classes(self):
 		
@@ -124,7 +118,6 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 
 	def on_store_changed(self, *args):
 		
-		self.changed = True
 		self.update_classes()
 		self.load_descriptors()
 		self.update()
@@ -142,7 +135,6 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	@QtCore.Slot()
 	def on_sample_class_changed(self):
 		
-		self.changed = True
 		self.load_descriptors()
 		self.update()
 		self.cluster_classes_changed.emit()
@@ -150,7 +142,6 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	@QtCore.Slot()
 	def on_node_class_changed(self):
 		
-		self.changed = True
 		self.model.node_class = self.node_class_combo.get_value()
 		self.update()
 		self.cluster_classes_changed.emit()
@@ -158,7 +149,6 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	@QtCore.Slot()
 	def on_cluster_class_changed(self):
 		
-		self.changed = True
 		self.model.cluster_class = self.cluster_class_combo.get_value()
 		self.update()
 		self.cluster_classes_changed.emit()
@@ -166,7 +156,6 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	@QtCore.Slot()
 	def on_load_data(self):
 		
-		self.changed = False
 		self.load_data.emit()
 	
 	@QtCore.Slot()

@@ -41,7 +41,7 @@ class ExportClustering(Tool):
 		if not path:
 			return
 		if format == format_xlsx:
-			self.model.clusters.export_xlsx(path)
+			self.model.clustering.export_xlsx(path)
 		elif format == format_csv:
-			self.model.clusters.export_csv(path)
+			self.model.clustering.export_csv(path)
 

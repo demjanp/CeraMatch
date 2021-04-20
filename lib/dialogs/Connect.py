@@ -20,3 +20,9 @@ class Connect(DConnect):
 		logo_frame.layout().addStretch()
 		
 		return logo_frame
+	
+	def on_connect(self, identifier, connstr, local_folder = None, created = False):
+		
+		self.view.progress.show("Loading...")
+		DConnect.on_connect(self, identifier, connstr, local_folder, created, no_import = True)
+		self.view.progress.reset()

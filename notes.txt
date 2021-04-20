@@ -1,29 +1,23 @@
 
-undo function
+optimize load_drawing_data if possible
 
-functioning progress bars
+FIX history behaviour
+	
+	History
+		state: clusters, nodes, edges, labels, positions
+		
+		.clear()
+		.can_undo()	= True/False
+		.can_redo()	= True/False
+		.undo()		= clusters, nodes, edges, labels, positions
+		.redo()		= clusters, nodes, edges, labels, positions
+		.save()
 
+	save history on:
+		mouse release
+		graph_view.set_data
+		graph_view.add_cluster
 
-history:
-	clusters, nodes, edges, labels, positions
-
-GraphView.set_data(clusters, nodes, edges, labels, positions)
-	history.set_data(clusters, nodes, edges, labels, positions)
-
-model.clusters.store_position(node_id, x, y)
-	history.set_position(node_id, x, y)
-
-model.clusters.add_child(cluster_id, node_id)
-	history.add_child(cluster_id, node_id)
-
-model.clusters.remove_child(cluster_id, node_id)
-	history.remove_child(cluster_id, node_id)
-
-model.clusters.remove(node_id)
-	history.remove_node(node_id)
-
-model.clusters.add_cluster(cluster_id, node_ids)
-	history.add_cluster(cluster_id, node_ids)
 
 --------------------
 

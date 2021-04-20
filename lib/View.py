@@ -10,6 +10,7 @@ from lib.DistanceGroup import (DistanceGroup)
 from lib.ClusterGroup import (ClusterGroup)
 from lib.GraphView import (GraphView)
 from lib.StatusBar import (StatusBar)
+from lib.Progress import (Progress)
 
 from deposit import Broadcasts
 from deposit.commander.Registry import (Registry)
@@ -41,7 +42,7 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.toolbar = Toolbar(self)
 		self.menu = Menu(self)
 		self.statusbar = StatusBar(self)
-		self.progress = None
+		self.progress = Progress(self)
 		
 		self.setWindowIcon(self.get_icon("cm_icon.svg"))
 		self.setStyleSheet("QPushButton {padding: 5px; min-width: 100px;}")
@@ -111,18 +112,6 @@ class View(DModule, QtWidgets.QMainWindow):
 		else:
 			self.setWindowTitle("%s - %s" % (name, title))
 	
-	def show_progress(self, text):
-		
-		self.progress = QtWidgets.QProgressDialog(text, None, 0, 0, self, flags = QtCore.Qt.FramelessWindowHint)
-		self.progress.setWindowModality(QtCore.Qt.WindowModal)
-		self.progress.show()
-		QtWidgets.QApplication.processEvents()
-	
-	def hide_progress(self):
-		
-		self.progress.hide()
-		self.progress.setParent(None)
-	
 	def update_mrud(self):
 		
 		if self.model.data_source is None:
@@ -145,19 +134,18 @@ class View(DModule, QtWidgets.QMainWindow):
 			self.dialogs.open("Connect")
 			
 		else:
-			self.show_progress("Saving...")
+			self.progress.show("Saving...")
 			self.model.save()
-			self.hide_progress()
+			self.progress.reset()
 	
 	def set_clusters(self, clusters, nodes, edges, labels, positions = {}):
 		
-		self.show_progress("Clustering...")
 		if edges:
 			self.graph_view.set_data(self.model.sample_data, clusters, nodes, edges, labels, positions)
 		else:
 			self.graph_view.set_data(self.model.sample_data)
+		self.graph_view.reset_scene()
 		self.cluster_group.update_clusters_found(len(clusters) if clusters else 0)
-		self.hide_progress()
 	
 	def get_icon(self, name):
 
@@ -171,24 +159,20 @@ class View(DModule, QtWidgets.QMainWindow):
 	
 	def save_dendrogram(self, path):
 		
-		self.show_progress("Rendering...")
 		self.graph_view.save_pdf(path)
-		self.hide_progress()
 	
 	def save_catalog(self, path, scale = 1/3, dpi = 600, line_width = 0.5):
 		
-		self.show_progress("Rendering...")
-		data = self.model.clusters.get_cluster_data()  # [[sample_id, cluster_label], ...]
+		# TODO replace _get_cluster_data by clustering.get_data
+		data = self.model.clustering._get_cluster_data()  # [[sample_id, cluster_label], ...]
 		clusters = defaultdict(list)
 		for sample_id, label in data:
 			clusters[label].append(sample_id)
-		save_catalog(path, self.model.sample_data, clusters, scale, dpi, line_width)
-		self.hide_progress()
+		save_catalog(path, self.model.sample_data, clusters, scale, dpi, line_width, progress = self.progress)
 	
 	@QtCore.Slot()
 	def on_load_data(self):
 		
-		self.show_progress("Loading...")
 		nodes = None
 		if self.model.lap_descriptors is not None:
 			self.set_clusters(*self.model.load_samples())
@@ -199,7 +183,6 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.cluster_group.update_n_clusters()
 		
 		self.update()
-		self.hide_progress()
 	
 	@QtCore.Slot()
 	def on_cluster_classes_changed(self):
@@ -209,20 +192,16 @@ class View(DModule, QtWidgets.QMainWindow):
 	@QtCore.Slot()
 	def on_cluster(self):
 		
-		self.show_progress("Clustering...")
 		self.cluster_group.update_clusters_found(None)
 		max_clusters, limit = self.cluster_group.get_limits()
-		self.set_clusters(*self.model.clusters.make(max_clusters, limit))
+		self.set_clusters(*self.model.clustering.make(max_clusters, limit))
 		self.update()
-		self.hide_progress()
 	
 	@QtCore.Slot()
 	def on_update_tree(self):
 		
-		self.show_progress("Updating...")
-		self.set_clusters(*self.model.clusters.update())
+		self.set_clusters(*self.model.clustering.update())
 		self.update()
-		self.hide_progress()
 	
 	@QtCore.Slot()
 	def on_add_cluster(self):
@@ -232,32 +211,27 @@ class View(DModule, QtWidgets.QMainWindow):
 	@QtCore.Slot()
 	def on_calculate(self):
 		
-		self.show_progress("Calculating...")
 		self.model.calc_distance()
 		self.update()
-		self.hide_progress()
 	
 	@QtCore.Slot()
 	def on_delete_distance(self):
 		
 		reply = QtWidgets.QMessageBox.question(self, "Delete Distances", "Delete distances from database?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 		if reply == QtWidgets.QMessageBox.Yes:
-			self.show_progress("Deleting...")
 			self.model.delete_distance()
 			self.update()
-			self.hide_progress()
 	
 	@QtCore.Slot()
 	def on_delete_clusters(self):
 		
 		reply = QtWidgets.QMessageBox.question(self, "Delete Clusters", "Delete clusters from database?", QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
 		if reply == QtWidgets.QMessageBox.Yes:
-			self.show_progress("Deleting...")
-			self.model.clusters.delete()
+			self.model.clustering.delete()
 			labels = dict([(str(sample_id), sample_id) for sample_id in self.model.sample_ids])
 			self.graph_view.set_data(self.model.sample_data)
+			self.graph_view.reset_scene()
 			self.update()
-			self.hide_progress()
 	
 	def on_view_action(self, *args):
 		

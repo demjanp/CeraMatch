@@ -75,9 +75,9 @@ class Import(Dialog):
 			return
 		ext = os.path.splitext(path)[-1].lower()
 		if ext == ".xlsx":
-			clusters, nodes, edges, labels = self.model.clusters.import_xlsx(path, sample_column, cluster_column)
+			clusters, nodes, edges, labels = self.model.clustering.import_xlsx(path, sample_column, cluster_column)
 		elif ext == ".csv":
-			clusters, nodes, edges, labels = self.model.clusters.import_csv(path, sample_column, cluster_column)
+			clusters, nodes, edges, labels = self.model.clustering.import_csv(path, sample_column, cluster_column)
 		else:
 			return
 		self.view.set_clusters(clusters, nodes, edges, labels)
