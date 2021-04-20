@@ -1,3 +1,4 @@
+
 from lib.fnc_drawing import *
 
 from deposit.DModule import (DModule)
@@ -18,14 +19,16 @@ LINE_WIDTH = 1
 
 class Node(QtWidgets.QGraphicsItem):
 	
-	def __init__(self, node_id, radius = 10):
+	def __init__(self, model, node_id, radius = 10):
 		
+		self.model = weakref.ref(model)
 		self.node_id = node_id
 		self.radius = radius
 		self.edges = set([])  # [Edge, ...]
 		self.cluster = None
 		
 		self._focused_items = set([])
+		self.moved = False
 		
 		QtWidgets.QGraphicsItem.__init__(self)
 		
@@ -36,6 +39,11 @@ class Node(QtWidgets.QGraphicsItem):
 		self.setFlag(QtWidgets.QGraphicsItem.ItemIsFocusable, False)
 		self.setCacheMode(self.DeviceCoordinateCache)
 		self.setZValue(-1)
+	
+	def store_position(self):
+		
+		pos = self.pos()
+		self.model().clusters.store_position(self.node_id, pos.x(), pos.y())
 	
 	def type(self):
 		
@@ -57,6 +65,11 @@ class Node(QtWidgets.QGraphicsItem):
 		if node is not None:
 			node = weakref.ref(node)
 		self.cluster = node
+	
+	def set_pos(self, x, y):
+		
+		self.setPos(x, y)
+		self.store_position()
 	
 	def boundingRect(self):
 		
@@ -93,6 +106,9 @@ class Node(QtWidgets.QGraphicsItem):
 	def itemChange(self, change, value):
 		
 		if change == QtWidgets.QGraphicsItem.ItemPositionChange:
+			
+			self.moved = True
+			
 			for edge in self.edges:
 				edge().adjust()
 			
@@ -131,7 +147,7 @@ class Node(QtWidgets.QGraphicsItem):
 				y_mean += y
 				x_max = max(x_max, x + w)
 			y_mean /= len(cluster.children)
-			leaf.setPos(x_max + 2, y_mean)
+			leaf.set_pos(x_max + 2, y_mean)
 			
 			cluster.add_child(leaf)
 			leaf.set_cluster(cluster)
@@ -142,6 +158,9 @@ class Node(QtWidgets.QGraphicsItem):
 	
 		self.update()
 		QtWidgets.QGraphicsItem.mouseReleaseEvent(self, event)
+		
+		if self.moved:
+			self.scene().views()[0].store_positions()
 		
 		for item in self.collidingItems():
 			if isinstance(item, ClusterNode):
@@ -161,11 +180,10 @@ class ClusterNode(Node):
 	
 	def __init__(self, model, node_id, radius = 15):
 		
-		self.model = weakref.ref(model)
 		self.children = set([])
 		self._prev_pos = None
 		
-		Node.__init__(self, node_id, radius)
+		Node.__init__(self, model, node_id, radius)
 		
 		self.setFlag(QtWidgets.QGraphicsItem.ItemIsFocusable, True)
 	
@@ -224,9 +242,9 @@ class ClusterNode(Node):
 
 class SampleNode(Node):
 	
-	def __init__(self, sample_id, descriptors):
+	def __init__(self, model, sample_id, descriptors):
 		
-		Node.__init__(self, sample_id)
+		Node.__init__(self, model, sample_id)
 		
 		self.picture = QtGui.QPicture()
 		painter = QtGui.QPainter(self.picture)
@@ -314,7 +332,9 @@ class Edge(QtWidgets.QGraphicsItem):
 		if not self.source() or not self.target():
 			return
 		
-		painter.setPen(QtGui.QPen(QtCore.Qt.lightGray, LINE_WIDTH, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin))
+		pen = QtGui.QPen(QtCore.Qt.lightGray, LINE_WIDTH, QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
+		pen.setCosmetic(True)
+		painter.setPen(pen)
 		painter.drawLine(self.line)
 
 class GraphView(DModule, QtWidgets.QGraphicsView):
@@ -401,7 +421,14 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 			self.scene().removeItem(self._edges[idx])
 			del self._edges[idx]
 	
-	def set_data(self, sample_data, clusters = {}, nodes = [], edges = [], labels = {}, positions = None, gap = 10):
+	def store_positions(self):
+		
+		for node_id in self._nodes:
+			if self._nodes[node_id].moved:
+				self._nodes[node_id].store_position()
+				self._nodes[node_id].moved = False
+	
+	def set_data(self, sample_data, clusters = {}, nodes = [], edges = [], labels = {}, positions = {}, gap = 10):
 		# sample_data = {sample_id: [obj_id, descriptors], ...}
 		# clusters = {node_id: [sample_id, ...], ...}
 		# nodes = [node_id, ...]
@@ -409,9 +436,9 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		# labels = {node_id: label, ...}
 		# positions = {node_id: (x, y), ...} or None
 		
-		def get_positions():
+		def calc_positions(edges):
 			
-			positions = {}
+			pos_collect = {}
 			done = set([])
 			y_max = 0
 			G = nx.DiGraph()
@@ -429,7 +456,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 				w, h = rect.width(), rect.height()
 				G.nodes[node_id]["width"] = (w + 2*gap) * mul
 				G.nodes[node_id]["height"] = (h + 2*gap) * mul
-				
+			
 			g_positions = graphviz_layout(G, prog = "graphviz/dot.exe")
 			xmin, ymax = np.inf, -np.inf
 			for node_id in g_positions:
@@ -441,8 +468,8 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 				g_positions[node_id] = (x - xmin, ymax - y)
 			
 			for node_id in g_positions:
-				positions[node_id] = tuple(g_positions[node_id])
-				y_max = max(y_max, positions[node_id][1])
+				pos_collect[node_id] = tuple(g_positions[node_id])
+				y_max = max(y_max, pos_collect[node_id][1])
 			
 			n = len([node_id for node_id in self._nodes if node_id not in done])
 			if n > 3:
@@ -457,7 +484,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 			for node_id in self._nodes:
 				if node_id in done:
 					continue
-				positions[node_id] = (x, y)
+				pos_collect[node_id] = (x, y)
 				rect = self._nodes[node_id].boundingRect()
 				w, h = rect.width() + gap, rect.height() + gap
 				h_max = max(h_max, h)
@@ -469,7 +496,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 					h_max = 0
 					n = 0
 			
-			return positions
+			return pos_collect
 		
 		self.clear()
 		
@@ -485,21 +512,25 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		nodes.update(["@%s" % (sample_id) for sample_id in sample_data])
 		for node_id in nodes:
 			if node_id.startswith("@") and (node_id[1:] in sample_data):
-				self._nodes[node_id] = SampleNode(node_id, sample_data[node_id[1:]][1])
+				self._nodes[node_id] = SampleNode(self.model, node_id, sample_data[node_id[1:]][1])
 			elif node_id in clusters:
 				self._nodes[node_id] = ClusterNode(self.model, node_id)
 			else:
-				self._nodes[node_id] = Node(node_id)
+				self._nodes[node_id] = Node(self.model, node_id)
 			self.scene().addItem(self._nodes[node_id])
 		
 		for node_id in self._nodes:
 			if isinstance(self._nodes[node_id], ClusterNode):
 				self._nodes[node_id].set_children([self._nodes[node] for node in clusters[node_id]])
 		
-		if (not positions) or (False in [(node_id in positions) for node_id in nodes]):
-			positions = get_positions()
+		if False in [(node_id in positions) for node_id in nodes]:
+			positions_new = calc_positions(edges)
+			for node_id in positions:
+				positions_new[node_id] = positions[node_id]
+			positions = positions_new
+		
 		for node_id in self._nodes:
-			self._nodes[node_id].setPos(*positions[node_id])
+			self._nodes[node_id].set_pos(*positions[node_id])
 		
 		for source_id, target_id in edges:
 			self._edges.append(Edge(self._nodes[source_id], self._nodes[target_id]))
@@ -530,7 +561,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		cluster_id = "#%d" % (max([int(node_id[1:]) if node_id.startswith("#") else 0 for node_id in self._nodes]) + 1)
 		self._nodes[cluster_id] = ClusterNode(self.model, cluster_id)
 		self.scene().addItem(self._nodes[cluster_id])
-		self._nodes[cluster_id].setPos(cx, cy)
+		self._nodes[cluster_id].set_pos(cx, cy)
 		
 		cluster = self._nodes[cluster_id]
 		dx = 0
@@ -539,7 +570,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		for node in children:
 			dx += w_max / 2
 			side *= -1
-			node.setPos(cx + dx * side, cy)
+			node.set_pos(cx + dx * side, cy)
 			old_cluster = node.cluster
 			if old_cluster is not None:
 				old_cluster = old_cluster()
@@ -553,6 +584,34 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 			self.add_edge(node, cluster)
 		
 		self.model.clusters.add_cluster(cluster_id, [node.node_id for node in children])
+	
+	def save_pdf(self, path, dpi = 600):
+		
+		self.scene().clearSelection()
+		
+		rect = self.scene().itemsBoundingRect()
+		m = min(rect.width(), rect.height())*0.05
+		rect = rect.marginsAdded(QtCore.QMarginsF(m, m, m, m))
+		w, h = rect.width(), rect.height()
+		printer = QtPrintSupport.QPrinter()
+		printer.setWinPageSize(QtGui.QPageSize.A4)
+		printer.setFullPage(True)
+		printer.setOrientation(QtPrintSupport.QPrinter.Landscape)
+		printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
+		printer.setOutputFileName(path)
+		
+		size = printer.pageLayout().pageSize().sizePoints()
+		pw, ph = size.height(), size.width()
+		scale = min(pw / w, ph / h)
+		printer.setResolution(int(round(dpi / scale)))
+		
+		ph = int(round(h * (pw / w)))
+		printer.setPageSize(QtGui.QPageSize(QtCore.QSize(ph, pw), units = QtGui.QPageSize.Point))
+		
+		painter = QtGui.QPainter(printer)
+		
+		self.scene().render(painter, source = rect)
+		painter.end()
 	
 	def on_hover_item(self, item):
 		

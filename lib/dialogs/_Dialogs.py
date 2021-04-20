@@ -1,6 +1,7 @@
 from deposit.DModule import (DModule)
 
 from lib.dialogs.Connect import (Connect)
+from lib.dialogs.Import import (Import)
 from lib.dialogs.About import (About)
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
@@ -14,6 +15,7 @@ class Dialogs(DModule):
 		self.dialogs_open = []
 		self.dialogs = dict([(cls.__name__, cls) for cls in [  # {name: Dialog, ...}
 			Connect,
+			Import,
 			About,
 		]])
 		

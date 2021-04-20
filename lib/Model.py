@@ -172,12 +172,13 @@ class Model(Store):
 		self._has_distance = (not (self.distance == np.inf).any())
 	
 	def load_samples(self):
-		# returns clusters, nodes, edges, labels
+		# returns clusters, nodes, edges, labels, positions
 		#
 		# clusters = {#node_id: [@sample_id, ...], ...}
 		# nodes = [@sample_id, #node_id, ...]
 		# edges = [(@sample_id, #node_id), (#node_id1, #node_id2), ...]
 		# labels = {@sample_id: label, #node_id: label, ...}
+		# positions = {@sample_id: (x, y), #node_id: (x, y), ...}
 		
 		def _check_profile(descriptors):
 			
@@ -202,7 +203,7 @@ class Model(Store):
 		self.clear_samples()
 		
 		if self.lap_descriptors is None:
-			return None, None, None, None
+			return None, None, None, None, None
 		
 		sample_cls, id_descr = self.lap_descriptors["Custom_Id"]
 		for obj_id in self.classes[sample_cls].objects:

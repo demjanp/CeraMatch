@@ -20,6 +20,9 @@ class Dialog(DModule, QtWidgets.QDialog):
 		self.finished.connect(self.on_finished)
 
 		self.set_up(*args)
+		
+		if not self.layout():
+			self.setLayout(QtWidgets.QVBoxLayout())
 
 		self.setWindowTitle(self.title())
 

@@ -13,6 +13,19 @@ from natsort import natsorted
 from copy import copy
 import json
 
+class HeaderButton(QtWidgets.QToolButton):
+	
+	def __init__(self, label):
+		
+		QtWidgets.QToolButton.__init__(self)
+		
+		self.setText(label)
+		self.setArrowType(QtCore.Qt.RightArrow)
+		self.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed)
+		self.setAutoRaise(True)
+		self.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+		self.setStyleSheet("QToolButton {font: bold; border-top: 1px solid white; border-left: 1px solid white; border-bottom: 1px solid gray; border-right: 1px solid gray;} QToolButton:pressed {border-top: 1px solid gray; border-left: 1px solid gray; border-bottom: 1px solid white; border-right: 1px solid white;}")
+
 class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 	
 	load_data = QtCore.Signal()
@@ -33,14 +46,18 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 		self.cluster_class_combo = Combo(self.on_cluster_class_changed, editable = True)
 		self.node_class_combo = Combo(self.on_node_class_changed, editable = True)
 		
-		self.form_frame = QtWidgets.QFrame()
-		self.form_frame.setLayout(QtWidgets.QFormLayout())
-		self.form_frame.layout().setContentsMargins(0, 0, 0, 0)
+		classes_frame = QtWidgets.QFrame()
+		classes_frame.setLayout(QtWidgets.QFormLayout())
+		classes_frame.layout().setContentsMargins(0, 0, 0, 0)
 		
-		self.form_frame.layout().addRow(QtWidgets.QLabel("Sample Class:"), self.sample_class_combo)
-		self.form_frame.layout().addRow(QtWidgets.QLabel("Cluster Class:"), self.cluster_class_combo)
-		self.form_frame.layout().addRow(QtWidgets.QLabel("Node Class:"), self.node_class_combo)
-		self.form_frame.layout().addRow(QtWidgets.QLabel("Sample Descriptors:"), None)
+		classes_frame.layout().addRow(QtWidgets.QLabel("Sample Class:"), self.sample_class_combo)
+		classes_frame.layout().addRow(QtWidgets.QLabel("Cluster Class:"), self.cluster_class_combo)
+		classes_frame.layout().addRow(QtWidgets.QLabel("Node Class:"), self.node_class_combo)
+		
+		self.descriptors_frame = QtWidgets.QFrame()
+		self.descriptors_frame.setLayout(QtWidgets.QFormLayout())
+		self.descriptors_frame.layout().setContentsMargins(0, 0, 0, 0)
+		self.descriptors_frame.setVisible(False)
 		
 		self.load_data_button = Button("Load Data", self.on_load_data)
 		self.load_descr_button = Button("Load Descriptors...", self.on_load_descriptors)
@@ -50,7 +67,16 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 		button_frame.layout().addWidget(self.load_data_button)
 		button_frame.layout().addWidget(self.load_descr_button)
 		
-		self.layout().addWidget(self.form_frame)
+		descriptor_box = QtWidgets.QFrame()
+		descriptor_box.setLayout(QtWidgets.QVBoxLayout())
+		descriptor_box.layout().setContentsMargins(0, 0, 0, 0)
+		self.descriptor_header_button = HeaderButton("Descriptors")
+		descriptor_box.layout().addWidget(self.descriptor_header_button)
+		descriptor_box.layout().addWidget(self.descriptors_frame)
+		self.descriptor_header_button.clicked.connect(self.on_descriptors_clicked)
+		
+		self.layout().addWidget(classes_frame)
+		self.layout().addWidget(descriptor_box)
 		self.layout().addWidget(button_frame)
 		
 		self.load_descriptors()
@@ -58,6 +84,7 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 		
 		self.connect_broadcast(Broadcasts.STORE_LOADED, self.on_store_changed)
 		self.connect_broadcast(Broadcasts.STORE_DATA_SOURCE_CHANGED, self.on_store_changed)
+		self.connect_broadcast(Broadcasts.STORE_DATA_CHANGED, self.on_store_changed)
 	
 	def load_descriptors(self, descriptors = None):
 		
@@ -66,16 +93,15 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 		sample_cls = self.sample_class_combo.get_value()
 		self.model.load_lap_descriptors(descriptors, sample_cls)
 		
-		for row in range(self.form_frame.layout().rowCount())[::-1]:
-			if row > 3:
-				self.form_frame.layout().removeRow(row)
+		for row in range(self.descriptors_frame.layout().rowCount())[::-1]:
+			self.descriptors_frame.layout().removeRow(row)
 		
 		if self.model.lap_descriptors != prev:
 			self.changed = True
 		
 		if self.model.lap_descriptors is not None:
 			for name in self.model.lap_descriptors:
-				self.form_frame.layout().addRow(QtWidgets.QLabel("   %s" % (name)), QtWidgets.QLabel(".".join(self.model.lap_descriptors[name])))
+				self.descriptors_frame.layout().addRow(QtWidgets.QLabel("   %s" % (name)), QtWidgets.QLabel(".".join(self.model.lap_descriptors[name])))
 	
 	def update(self):
 		
@@ -102,6 +128,16 @@ class DescriptorGroup(DModule, QtWidgets.QGroupBox):
 		self.update_classes()
 		self.load_descriptors()
 		self.update()
+	
+	@QtCore.Slot()
+	def on_descriptors_clicked(self):
+		
+		visible = self.descriptors_frame.isVisible()
+		if visible:
+			self.descriptor_header_button.setArrowType(QtCore.Qt.RightArrow)
+		else:
+			self.descriptor_header_button.setArrowType(QtCore.Qt.DownArrow)
+		self.descriptors_frame.setVisible(not visible)
 	
 	@QtCore.Slot()
 	def on_sample_class_changed(self):

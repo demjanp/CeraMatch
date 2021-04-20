@@ -1,6 +1,6 @@
 from lib.fnc_matching import get_rim, get_reduced
 
-from PySide2 import (QtCore, QtGui)
+from PySide2 import (QtCore, QtGui, QtPrintSupport)
 from collections import defaultdict
 from natsort import natsorted
 import numpy as np
@@ -8,99 +8,6 @@ import numpy as np
 RIM_GAP = 5
 BREAK_GAP = 3
 BREAK_LENGTH = 3
-
-'''
-from PySide2 import (QtWidgets, QtCore, QtGui, QtSvg, QtPrintSupport)
-
-def save_clusters_as_pdf(tgt_path, samples):
-	
-	clusters = defaultdict(list) # {label: [sample, ...], ...}
-	for sample in samples:
-		if sample.cluster is None:
-			continue
-		clusters[sample.cluster].append(sample)
-	if not clusters:
-		return
-	collect = {}
-	for cluster in natsorted(clusters.keys()):
-		collect[cluster] = natsorted(clusters[cluster], key = lambda sample: sample.id)
-	clusters = collect
-	
-	renderer = QtSvg.QSvgRenderer()
-	w_src_max = 0
-	h_src_max = 0
-	cmax = 0
-	for cluster in clusters:
-		for sample in clusters[cluster]:
-			cmax += 1
-			src_path = sample.resource.path()
-			renderer.load(src_path)
-			rnd_size = renderer.defaultSize()
-			w_src_max = max(w_src_max, rnd_size.width())
-			h_src_max = max(h_src_max, rnd_size.height())
-	
-	printer = QtPrintSupport.QPrinter()
-	printer.setWinPageSize(QtGui.QPageSize.A4)
-	printer.setResolution(300)
-	printer.setOrientation(QtPrintSupport.QPrinter.Portrait)
-	printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
-	printer.setOutputFileName(tgt_path)
-	
-	w_max = printer.width()
-	h_max = printer.height()
-	
-	scale = min(1, w_max / w_src_max, h_max / h_src_max)
-	
-	painter = QtGui.QPainter(printer)
-	
-	td = QtGui.QTextDocument()
-	font = td.defaultFont()
-	font.setPointSize(36)
-	td.setDefaultFont(font)
-	
-	def init_page(printer, td, painter, cluster, page, new_page):
-		
-		if new_page:
-			printer.newPage()
-		td.setHtml("Cluster: %s, Page: %s" % (cluster, page))
-		td.drawContents(painter)
-		return td.size().height()
-	
-	cnt = 0
-	for cluster in clusters:
-		x = 0
-		y = 0
-		h_max_row = 0
-		page = 1
-		
-		y = init_page(printer, td, painter, cluster, page, cnt > 0)
-		
-		for sample in clusters[cluster]:
-			print("\rgen. pdf %d/%d            " % (cnt + 1, cmax), end = "")
-			cnt += 1
-			
-			src_path = sample.resource.path()
-			renderer.load(src_path)
-			rnd_size = renderer.defaultSize()
-			w = rnd_size.width() * scale
-			h = rnd_size.height() * scale
-			h_max_row = max(h_max_row, h)
-			
-			if x + w > w_max:
-				x = 0
-				y += h_max_row
-				h_max_row = h
-			
-			if y + h_max_row > h_max:
-				x = 0
-				page += 1
-				y = init_page(printer, td, painter, cluster, page, True)
-			
-			renderer.render(painter, QtCore.QRectF(x, y, w, h))
-			x += w
-
-	painter.end()
-'''
 
 def get_lap_descriptors(lap_descriptors = None):
 	
@@ -398,3 +305,101 @@ def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale
 	for coords in breaks:
 		draw_polygon(coords, closed = False)
 	
+def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width = 0.5):
+	# sample_data = {sample_id: [obj_id, descriptors], ...}
+	#	descriptors = {
+	#		profile = {Profile_Geometry, Profile_Rim, Profile_Bottom, Profile_Radius, Profile_Radius_Point, Profile_Rim_Point, Profile_Bottom_Point, Arc_Geometry: []}
+	#		details = {target_id: {Detail_Geometry, Detail_Closed, Detail_Filled}, ...}
+	#		inflections = {target_id: {Inflection_Geometry, Inflection_Dashed}, ...}
+	#		breaks = {target_id: {Break_Geometry}, ...}
+	#	}
+	# clusters = {label: [sample_id, ...], ...}
+	
+	def get_picture(sample_id, descriptors, scale, line_width):
+		
+		picture = QtGui.QPicture()
+		painter = QtGui.QPainter(picture)
+		render_drawing(descriptors, painter, line_width, scale = scale)
+		painter.end()
+		return picture
+	
+	def init_cluster(td, painter, cluster_label, y):
+		
+		td.setHtml("Cluster: %s" % (cluster_label))
+		h = td.size().height() + 24
+		painter.translate(0, y)
+		td.drawContents(painter)
+		painter.translate(0, -y)
+		
+		return h
+	
+	labels = natsorted(clusters.keys())
+	sample_ids = set([])
+	for label in labels:
+		for sample_id in clusters[label]:
+			sample_ids.add(sample_id)
+	cmax = len(sample_ids) + len(clusters)
+	cnt = 1
+	drawings = {}
+	for sample_id in sample_ids:
+		print("\rrendering %d/%d            " % (cnt, cmax), end = "")
+		cnt += 1
+		drawings[sample_id] = get_picture(sample_id, sample_data[sample_id][1], scale, line_width)
+	
+	printer = QtPrintSupport.QPrinter()
+	printer.setWinPageSize(QtGui.QPageSize.A4)
+	printer.setResolution(dpi)
+	printer.setOrientation(QtPrintSupport.QPrinter.Portrait)
+	printer.setOutputFormat(QtPrintSupport.QPrinter.PdfFormat)
+	printer.setOutputFileName(path)
+	w_max = printer.width()
+	h_max = printer.height()
+	
+	painter = QtGui.QPainter(printer)
+	
+	td = QtGui.QTextDocument()
+	font = td.defaultFont()
+	font.setPointSize(24)
+	td.setDefaultFont(font)
+	
+	x = 0
+	y = 0
+	h_max_row = 0
+	
+	for label in labels:
+		print("\rrendering %d/%d            " % (cnt, cmax), end = "")
+		cnt += 1
+		
+		x = 0
+		y += h_max_row
+		if h_max - y > 200:
+			y += init_cluster(td, painter, label, y)
+		else:
+			printer.newPage()
+			y = init_cluster(td, painter, label, 0)
+		h_max_row = 0
+		
+		for sample_id in clusters[label]:
+			
+			rect = drawings[sample_id].boundingRect()
+			mul = printer.resolution() / drawings[sample_id].logicalDpiX()
+			w = (rect.width() * mul) * 1.2
+			h = (rect.height() * mul) * 1.2
+			h_max_row = max(h_max_row, h)
+			
+			if x + w > w_max:
+				x = 0
+				y += h_max_row
+				h_max_row = h
+			
+			if y + h_max_row > h_max:
+				printer.newPage()
+				x = 0
+				y = init_cluster(td, painter, label, 0)
+			
+			painter.drawPicture(x, y, drawings[sample_id])
+			x += w
+	
+	painter.end()
+
+

@@ -1,25 +1,34 @@
 
-export to PDF
-
-import / export clustering to file
-
-update DGeometry.py in Deposit
-
-store / load Cluster and Node Class in registry (?)
-
 undo function
 
-***
+functioning progress bars
 
-import clusters ->
-	-> store clusters in db
 
-store clusters in db
-	-> CMCluster.contains.Sample
-		CMCluster.Name
-	-> CMNode.linked.CMNode = edge
-		CMNode.Name
-		CMNode.linked.CMCluster
+history:
+	clusters, nodes, edges, labels, positions
+
+GraphView.set_data(clusters, nodes, edges, labels, positions)
+	history.set_data(clusters, nodes, edges, labels, positions)
+
+model.clusters.store_position(node_id, x, y)
+	history.set_position(node_id, x, y)
+
+model.clusters.add_child(cluster_id, node_id)
+	history.add_child(cluster_id, node_id)
+
+model.clusters.remove_child(cluster_id, node_id)
+	history.remove_child(cluster_id, node_id)
+
+model.clusters.remove(node_id)
+	history.remove_node(node_id)
+
+model.clusters.add_cluster(cluster_id, node_ids)
+	history.add_cluster(cluster_id, node_ids)
+
+--------------------
+
+calculate minimum number of cluster re-assignments so auto-clustering matches manual clustering
+compare vs. randomized
 
 --------------------
 
