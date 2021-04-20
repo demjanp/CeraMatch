@@ -123,7 +123,8 @@ class View(DModule, QtWidgets.QMainWindow):
 	
 	def update(self):
 		
-		self.set_title(os.path.split(str(self.model.identifier))[-1].strip("#"))
+		if self.model.is_connected():
+			self.set_title(os.path.split(str(self.model.identifier))[-1].strip("#"))
 		self.descriptor_group.update()
 		self.distance_group.update()
 		self.cluster_group.update()
