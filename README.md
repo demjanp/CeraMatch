@@ -1,2 +1,2 @@
-# ![](res/cm_icon.svg)CeraMatch
+# ![](res/cm_logo.svg)CeraMatch
 Shape matching and clustering of ceramic shapes
