@@ -312,8 +312,7 @@ class SampleNode(Node):
 	def mouseDoubleClickEvent(self, event):
 		
 		model = self.model()
-		if model.dc is None:
-			model.launch_deposit()
+		model.launch_deposit()
 		obj_id = model.sample_data[self.node_id[1:]][0]
 		model.dc.view.query("SELECT Sample.* WHERE id(Sample) == %d" % (obj_id))
 

@@ -253,7 +253,11 @@ class Model(Store):
 	
 	def launch_deposit(self):
 		
-		self.dc = Commander(model = self)
+		if self.dc is None:
+			self.dc = Commander(model = self)
+		self.dc.view.show()
+		self.dc.view.activateWindow()
+		self.dc.view.resume_broadcasts()
 	
 	def on_close(self):
 		
