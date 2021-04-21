@@ -205,6 +205,7 @@ class Clustering(DModule):
 		
 		self._has_clusters = True
 		clusters, nodes, edges, labels = self.format_node_ids(clusters, nodes, edges, labels)
+		
 		self.store(clusters, nodes, edges, labels)
 		
 		return clusters, nodes, edges, labels

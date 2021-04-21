@@ -413,6 +413,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		self._nodes.clear()
 		self._edges.clear()
 		self._labels.clear()
+		self.history.clear()
 	
 	def reset_scene(self):
 		
@@ -585,6 +586,8 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		for source_id, target_id in edges:
 			self._edges.append(Edge(self._nodes[source_id], self._nodes[target_id]))
 			self.scene().addItem(self._edges[-1])
+		
+		self.model.clustering.set_data(clusters, nodes, edges, labels, positions)
 		
 		self.history.save()
 		self.broadcast(Broadcasts.VIEW_ACTION)
