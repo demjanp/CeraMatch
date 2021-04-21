@@ -302,90 +302,7 @@ def find_keypoints(profile, axis, thickness):
 	
 	return axis[keypoints]
 
-def frame_hamming_scaled(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor):
-	
-	def _make_mask(profile, keypoints, angle, scale, r_r, rasterize_factor):
-		
-		if angle != 0:
-			profile = rotate_coords(profile, angle)
-			keypoints = rotate_coords(keypoints, angle)
-		profile = np.round(profile * scale * rasterize_factor).astype(int)
-		keypoints = np.round(keypoints * scale * rasterize_factor).astype(int)
-		x0, y0 = profile.min(axis = 0) - 4*r_r
-		profile -= [x0, y0]
-		keypoints -= [x0, y0]
-		w, h = profile.max(axis = 0) + 4*r_r
-		img = Image.new("1", (w, h))
-		draw = ImageDraw.Draw(img)
-		draw.polygon([(x, y) for x, y in profile], fill = 1)
-		mask = np.array(img, dtype = bool).T
-		img.close()
-		return mask, keypoints
-	
-	def _get_kp_mask(mask, keypoints, i, shift_x, shift_y, r_r, rasterize_factor):
-		
-		row, col = np.round(keypoints[i] - [shift_x * rasterize_factor, shift_y * rasterize_factor]).astype(int)
-		col0 = col - r_r
-		col1 = col0 + 2*r_r + 1
-		row0 = row - r_r
-		row1 = row0 + 2*r_r + 1
-		return mask[:,col0:col1][row0:row1]
-	
-	r = int(round(r))
-	r_r = r * rasterize_factor
-	w = np.ones((2*r_r + 1, 2*r_r + 1), dtype = float)
-	ijs = np.argwhere(w > 0)
-	d = np.sqrt(((ijs - r_r)**2).sum(axis = 1))
-	d[d > r_r] = r_r
-	w[ijs[:,0], ijs[:,1]] = ((r_r - d) / r_r)**2
-	
-	rot_step = 2*np.arcsin(1 / (2*r))
-	angle_min = -np.pi / 16
-	angle_max = np.pi / 16
-	angles = np.linspace(angle_min, angle_max, int(round((angle_max - angle_min) / rot_step)))
-	angles = angles[angles != 0]
-	angles = np.insert(angles, 0, 0)
-	
-	scales = np.linspace(0.8, 1.2, 5)
-	scales = scales[scales != 1]
-	scales = np.insert(scales, 0, 1)
-	
-	shifts = []
-	for shift_x in range(-4, 5, 2):
-		for shift_y in range(-4, 5, 2):
-			if [shift_x, shift_y] == [0, 0]:
-				continue
-			shifts.append([shift_x, shift_y])
-	shifts = [[0,0]] + shifts
-	
-	h_dist_sum = 0
-	h_dist_norm = 0
-	d = cdist(keypoints1, keypoints2)
-	mask_m1, keypoints_m1 = _make_mask(profile1, keypoints1, 0, 1, r_r, rasterize_factor)
-	for i in range(keypoints1.shape[0]):
-		jj = np.where(d[i] < r)[0]
-		if not jj.size:
-			continue
-		mask1 = _get_kp_mask(mask_m1, keypoints_m1, i, 0, 0, r_r, rasterize_factor)
-		mask1_sum = w[mask1].sum()
-		h_dist_opt = np.inf
-		for angle in angles:
-			for scale in scales:
-				mask_m2, keypoints_m2 = _make_mask(profile2, keypoints2, angle, scale, r_r, rasterize_factor)
-				for j in jj:
-					for shift_x, shift_y in shifts:
-						mask2 = _get_kp_mask(mask_m2, keypoints_m2, j, shift_x, shift_y, r_r, rasterize_factor)
-						h_dist = 1 - (2*w[mask1 & mask2].sum()) / (mask1_sum + w[mask2].sum())
-						if h_dist < h_dist_opt:
-							h_dist_opt = h_dist
-		
-		if h_dist_opt < np.inf:
-			h_dist_sum += h_dist_opt**2
-			h_dist_norm += 1
-	
-	return h_dist_sum, h_dist_norm
-
-def hamming_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor):
+def dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor):
 	
 	def _make_mask(profile, keypoints, angle, r_r, rasterize_factor):
 		
@@ -437,8 +354,8 @@ def hamming_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor
 			shifts.append([shift_x, shift_y])
 	shifts = [[0,0]] + shifts
 	
-	h_dist_sum = 0
-	h_dist_norm = 0
+	d_dist_sum = 0
+	d_dist_norm = 0
 	d = cdist(keypoints1, keypoints2)
 	mask_m1, keypoints_m1 = _make_mask(profile1, keypoints1, 0, r_r, rasterize_factor)
 	for i in range(keypoints1.shape[0]):
@@ -447,21 +364,21 @@ def hamming_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor
 			continue
 		mask1 = _get_kp_mask(mask_m1, keypoints_m1, i, 0, 0, r_r, rasterize_factor)
 		mask1_sum = w[mask1].sum()
-		h_dist_opt = np.inf
+		d_dist_opt = np.inf
 		for angle in angles:
 			mask_m2, keypoints_m2 = _make_mask(profile2, keypoints2, angle, r_r, rasterize_factor)
 			for j in jj:
 				for shift_x, shift_y in shifts:
 					mask2 = _get_kp_mask(mask_m2, keypoints_m2, j, shift_x, shift_y, r_r, rasterize_factor)
-					h_dist = 1 - (2*w[mask1 & mask2].sum()) / (mask1_sum + w[mask2].sum())
-					if h_dist < h_dist_opt:
-						h_dist_opt = h_dist
+					d_dist = 1 - (2*w[mask1 & mask2].sum()) / (mask1_sum + w[mask2].sum())
+					if d_dist < d_dist_opt:
+						d_dist_opt = d_dist
 		
-		if h_dist_opt < np.inf:
-			h_dist_sum += h_dist_opt**2
-			h_dist_norm += 1
+		if d_dist_opt < np.inf:
+			d_dist_sum += d_dist_opt**2
+			d_dist_norm += 1
 	
-	return h_dist_sum, h_dist_norm
+	return d_dist_sum, d_dist_norm
 
 def dist_worker(ijs_mp, collect_mp, data, sample_ids):
 	
@@ -482,31 +399,31 @@ def dist_worker(ijs_mp, collect_mp, data, sample_ids):
 		diam_dist = diameter_dist(axis1, radius1, axis2, radius2)
 		ax_dist = axis_dist(axis1, axis2)
 		
-		h_dist_sum1, h_dist_norm1 = hamming_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
-		h_dist_sum2, h_dist_norm2 = hamming_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
-		h_dist = np.sqrt((h_dist_sum1 + h_dist_sum2) / (h_dist_norm1 + h_dist_norm2))
+		d_dist_sum1, d_dist_norm1 = dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
+		d_dist_sum2, d_dist_norm2 = dice_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
+		d_dist = np.sqrt((d_dist_sum1 + d_dist_sum2) / (d_dist_norm1 + d_dist_norm2))
 		
 		keypoints1 = np.array([keypoints1[0]])
 		keypoints2 = np.array([keypoints2[0]])
-		h_dist_sum1, h_dist_norm1 = hamming_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
-		h_dist_sum2, h_dist_norm2 = hamming_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
-		h_rim_dist = np.sqrt((h_dist_sum1 + h_dist_sum2) / (h_dist_norm1 + h_dist_norm2))
+		d_dist_sum1, d_dist_norm1 = dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
+		d_dist_sum2, d_dist_norm2 = dice_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
+		d_rim_dist = np.sqrt((d_dist_sum1 + d_dist_sum2) / (d_dist_norm1 + d_dist_norm2))
 		
 		distance[i, j, 0] = diam_dist
 		distance[i, j, 1] = ax_dist
-		distance[i, j, 2] = h_dist
-		distance[i, j, 3] = h_rim_dist
+		distance[i, j, 2] = d_dist
+		distance[i, j, 3] = d_rim_dist
 		
 		distance[j, i, 0] = diam_dist
 		distance[j, i, 1] = ax_dist
-		distance[j, i, 2] = h_dist
-		distance[j, i, 3] = h_rim_dist
+		distance[j, i, 2] = d_dist
+		distance[j, i, 3] = d_rim_dist
 		
 	collect_mp.append(distance)
 	
 def calc_distances(profiles, distance = None, progress = None):
 	# profiles[sample_id] = [profile, radius]
-	# returns distance[i, j] = [diam_dist, ax_dist, h_dist, h_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# returns distance[i, j] = [diam_dist, ax_dist, d_dist, d_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	
 	def _update_progress(ijs_mp, procs):
 		
@@ -568,8 +485,7 @@ def calc_distances(profiles, distance = None, progress = None):
 	collect_mp = manager.list()
 	cmax = len(ijs_mp)
 	procs = []
-#	for pi in range(mp.cpu_count()):
-	for pi in range(min(30, mp.cpu_count())):
+	for pi in range(min(30, mp.cpu_count() - 1)):
 		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids)))
 		procs[-1].start()
 		cnt = _update_progress(ijs_mp, procs)
@@ -593,7 +509,7 @@ def calc_distances(profiles, distance = None, progress = None):
 		proc.terminate()
 		proc = None
 	
-	# distance[i, j] = [diam_dist, ax_dist, h_dist, h_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# distance[i, j] = [diam_dist, ax_dist, d_dist, d_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	for i in range(profiles_n):
 		distance[i,i,:] = 0
 	
@@ -606,7 +522,7 @@ def calc_distances(profiles, distance = None, progress = None):
 	return distance
 
 def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
-	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# D[i, j] = [diam_dist, ax_dist, d_dist, d_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	# max_clusters = maximum number of clusters to form
 	# limit = maximum morphometric distance between members of one clusters (used only if max_clusters is not specified)
 	# 
@@ -768,7 +684,7 @@ def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
 	return clusters, nodes, edges, labels
 
 def update_clusters(D, clusters, progress = None):
-	# D[i, j] = [diam_dist, ax_dist, h_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
+	# D[i, j] = [diam_dist, ax_dist, d_dist, d_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	# clusters = {label: [sample_idx, ...], ...}; sample_idx = index in sample_ids
 	# 
 	# returns clusters, nodes, edges, labels

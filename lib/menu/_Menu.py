@@ -4,6 +4,8 @@ from deposit.DModule import (DModule)
 from lib.toolbar.Connect import Connect
 from lib.toolbar.Save import Save
 from lib.toolbar.Deposit import Deposit
+from lib.toolbar.Undo import Undo
+from lib.toolbar.Redo import Redo
 from lib.toolbar.ImportClustering import ImportClustering
 from lib.toolbar.ExportClustering import ExportClustering
 from lib.toolbar.ExportDendrogram import ExportDendrogram
@@ -19,6 +21,7 @@ import os
 
 MENUS = {
 	"Data": [Connect, Save, Deposit, Separator, ImportClustering, ExportClustering, Separator, ClearRecent,],
+	"Edit": [Undo, Redo,],
 	"Export PDF": [ExportDendrogram, ExportCatalog,],
 	"Help": [About,],
 }

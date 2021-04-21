@@ -54,7 +54,7 @@ class Clustering(DModule):
 		clusters = dict([(self.format_node_id(idx), [self.format_node_id(i) for i in clusters[idx]]) for idx in clusters])
 		nodes = set([self.format_node_id(idx) for idx in nodes])
 		edges = set([(self.format_node_id(idx1), self.format_node_id(idx2)) for idx1, idx2 in edges])
-		labels = dict([(self.format_node_id(idx), labels[idx]) for idx in labels])
+		labels = dict([(self.format_node_id(idx), self.model.sample_ids[idx] if idx < len(self.model.sample_ids) else labels[idx]) for idx in labels])
 		if positions is None:
 			return clusters, nodes, edges, labels
 		else:

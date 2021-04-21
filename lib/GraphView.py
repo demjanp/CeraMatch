@@ -6,7 +6,7 @@ from lib.History import (History)
 from deposit.DModule import (DModule)
 from deposit import Broadcasts
 
-from PySide2 import (QtWidgets, QtCore, QtGui, QtPrintSupport)
+from PySide2 import (QtWidgets, QtCore, QtGui, QtSvg, QtPrintSupport)
 from networkx.drawing.nx_agraph import graphviz_layout
 from copy import copy
 import networkx as nx
@@ -18,6 +18,7 @@ EDGE_TYPE = QtWidgets.QGraphicsItem.UserType + 2
 
 SCALE_DRAWINGS = 0.5
 LINE_WIDTH = 1
+SCALE_TOOLTIP = 1
 
 class Node(QtWidgets.QGraphicsItem):
 	
@@ -244,10 +245,6 @@ class ClusterNode(Node):
 			node().setSelected(False)
 		self.setSelected(False)
 	
-	def mouseDoubleClickEvent(self, event):
-		
-		Node.mouseDoubleClickEvent(self, event)
-
 class SampleNode(Node):
 	
 	def __init__(self, model, graph_view, sample_id, descriptors):
@@ -289,6 +286,36 @@ class SampleNode(Node):
 			painter.setPen(QtGui.QPen(box_color, 1))
 			painter.drawRect(self._rect)
 		painter.drawPicture(0, 0, self.picture)
+	
+	def hoverMoveEvent(self, event):
+		
+		if not self.toolTip():
+			buffer = QtCore.QBuffer()
+			buffer.open(QtCore.QIODevice.WriteOnly)
+			scale = SCALE_TOOLTIP / SCALE_DRAWINGS
+			gen = QtSvg.QSvgGenerator()
+			gen.setOutputDevice(buffer)
+			painter = QtGui.QPainter(gen)
+			painter.scale(scale, scale)
+			rect = self._rect.marginsAdded(QtCore.QMargins(10, 10, 10, 10))
+			rect = QtCore.QRectF(rect.x(), rect.y(), rect.width()*0.8, rect.height())
+			painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+			painter.drawRect(rect)
+			painter.setPen(QtGui.QPen(QtCore.Qt.black, 0.5))
+			painter.drawPicture(0, 0, self.picture)
+			painter.drawText(rect, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.node_id[1:])
+			painter.end()
+			self.setToolTip("<img src=\"data:image/png;base64,%s\">" % (bytes(buffer.data().toBase64()).decode()))
+		
+		Node.hoverMoveEvent(self, event)
+	
+	def mouseDoubleClickEvent(self, event):
+		
+		model = self.model()
+		if model.dc is None:
+			model.launch_deposit()
+		obj_id = model.sample_data[self.node_id[1:]][0]
+		model.dc.view.query("SELECT Sample.* WHERE id(Sample) == %d" % (obj_id))
 
 class Edge(QtWidgets.QGraphicsItem):
 	
@@ -625,7 +652,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 			return
 		self.set_data(self.model.sample_data, *self.history.redo())
 	
-	def save_pdf(self, path, dpi = 600):
+	def save_pdf(self, path, dpi = 200):
 		
 		cmax = 4
 		self.view.progress.update_state(text = "Rendering...", value = 1, maximum = cmax)

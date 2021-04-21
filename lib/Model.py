@@ -28,7 +28,7 @@ class Model(Store):
 		self.sample_ids = []
 		self.sample_data = {}
 		self.distance = None
-		self.dist_rels = ["diam_dist", "axis_dist", "h_dist", "h_rim_dist"]
+		self.dist_rels = ["diam_dist", "axis_dist", "dice_dist", "dice_rim_dist"]
 		
 		# self.sample_data = {sample_id: [obj_id, descriptors], ...}
 		#	descriptors = {
