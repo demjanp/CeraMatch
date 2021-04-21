@@ -1,2 +1,2 @@
 # CeraMatch
-Shape matching and clustering of ceramic shapes
+Visual shape-matching and typology of ceramics
