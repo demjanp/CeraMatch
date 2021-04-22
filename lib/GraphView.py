@@ -17,15 +17,17 @@ NODE_TYPE = QtWidgets.QGraphicsItem.UserType + 1
 EDGE_TYPE = QtWidgets.QGraphicsItem.UserType + 2
 
 SCALE_DRAWINGS = 0.5
-LINE_WIDTH = 1
 SCALE_TOOLTIP = 1
-TOOLTIP_DELAY = 200
+SCALE_CUTOFF = 0.2
+LINE_WIDTH = 1
+TOOLTIP_SHOW_DELAY = 800
+TOOLTIP_HIDE_DELAY = 400
 
 class ToolTip(QtWidgets.QLabel):
 	
 	def __init__(self):
 		
-		self.node_id = None
+		self.node = None
 		
 		QtWidgets.QLabel.__init__(self)
 		
@@ -34,6 +36,7 @@ class ToolTip(QtWidgets.QLabel):
 		self.setStyleSheet("QLabel { background-color : white; }")
 		
 		self.hide_timer = QtCore.QTimer(singleShot = True, timeout = self.on_hide_timer)
+		self.show_timer = QtCore.QTimer(singleShot = True, timeout = self.on_show_timer)
 		self.hide()
 	
 	def move(self, pos):
@@ -61,17 +64,19 @@ class ToolTip(QtWidgets.QLabel):
 			geo.moveLeft(screenGeo.left())
 		QtWidgets.QLabel.move(self, geo.topLeft())
 	
-	def show(self, text, node_id):
+	def show(self, text, node):
 		
+		self.show_timer.stop()
 		self.hide_timer.stop()
-		self.node_id = node_id
+		self.node = weakref.ref(node)
 		self.setText(text)
 		self.adjustSize()
 		self.move(QtGui.QCursor.pos())
-		QtWidgets.QLabel.show(self)
+		self.show_timer.start(TOOLTIP_SHOW_DELAY)
 	
 	def hide(self, delay = None):
 		
+		self.show_timer.stop()
 		if delay is None:
 			self.hide_timer.stop()
 			QtWidgets.QLabel.hide(self)
@@ -81,6 +86,12 @@ class ToolTip(QtWidgets.QLabel):
 		self.hide_timer.start(delay)
 	
 	@QtCore.Slot()
+	def on_show_timer(self):
+		
+		if self.node().isUnderMouse():
+			QtWidgets.QLabel.show(self)
+	
+	@QtCore.Slot()
 	def on_hide_timer(self):
 		
 		self.hide()
@@ -88,7 +99,9 @@ class ToolTip(QtWidgets.QLabel):
 	def leaveEvent(self, event):
 		
 		if self.isVisible():
-			self.hide(TOOLTIP_DELAY)
+			self.hide(TOOLTIP_HIDE_DELAY)
+		else:
+			self.show_timer.stop()
 		
 		QtWidgets.QLabel.leaveEvent(self, event)
 	
@@ -272,12 +285,13 @@ class Node(QtWidgets.QGraphicsItem):
 						changed = True
 		self.graph_view.history.save()
 		self.graph_view.broadcast(Broadcasts.VIEW_ACTION)
-	
+
 class ClusterNode(Node):
 	
 	def __init__(self, model, graph_view, node_id, label, radius = 5):
 		
 		self.children = set([])  # {weakref.ref(node), ...}
+		self._first_sample = None
 		
 		Node.__init__(self, model, graph_view, node_id, label, radius)
 		
@@ -302,14 +316,16 @@ class ClusterNode(Node):
 	def set_children(self, children):
 		
 		self.children.clear()
-		self.setToolTip("")
+		self.tool_tip = None
+		self.update_first_sample()
 		for child in children:
 			child.set_cluster(self)
 			self.children.add(weakref.ref(child))
 	
 	def add_child(self, node):
 		
-		self.setToolTip("")
+		self.tool_tip = None
+		self.update_first_sample()
 		node_ref = weakref.ref(node)
 		if node_ref not in self.children:
 			self.children.add(node_ref)
@@ -317,7 +333,8 @@ class ClusterNode(Node):
 	
 	def remove_child(self, node):
 		
-		self.setToolTip("")
+		self.tool_tip = None
+		self.update_first_sample()
 		node_ref = weakref.ref(node)
 		if node_ref in self.children:
 			self.children.remove(node_ref)
@@ -325,20 +342,23 @@ class ClusterNode(Node):
 	
 	def paint(self, painter, option, widget):
 		
+		scale = self.graph_view.get_scale()
+		color = QtCore.Qt.lightGray
+		if (option.state & QtWidgets.QStyle.State_Selected):
+			color = QtCore.Qt.red
+		elif (option.state & QtWidgets.QStyle.State_HasFocus):
+			color = QtCore.Qt.darkGray
 		pen_width = 0
 		if option.state & QtWidgets.QStyle.State_Sunken:
 			pen_width = 2
-		
-		if (option.state & QtWidgets.QStyle.State_Selected) or (option.state & QtWidgets.QStyle.State_HasFocus):
-			painter.setBrush(QtGui.QBrush(QtCore.Qt.darkGray))
-		else:
-			painter.setBrush(QtGui.QBrush(QtCore.Qt.lightGray))
+		painter.setBrush(QtGui.QBrush(color))
 		painter.setPen(QtGui.QPen(QtCore.Qt.darkGray, pen_width))
-		
-		scale = self.graph_view.get_scale()
 		radius = self.radius / scale
-		
 		painter.drawEllipse(-radius, -radius, 2*radius, 2*radius)
+	
+	def update_first_sample(self):
+		
+		self._first_sample = self.model().clustering.get_first_sample(self.node_id)
 	
 	def update_tooltip(self, gap = 5):
 		
@@ -376,6 +396,7 @@ class ClusterNode(Node):
 		painter = QtGui.QPainter(gen)
 		painter.scale(scale, scale)
 		painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+		painter.setBrush(QtGui.QBrush(QtCore.Qt.white))
 		rect = QtCore.QRectF(0, 0, x_max, y_max)
 		painter.drawRect(rect)
 		painter.setPen(QtGui.QPen(QtCore.Qt.black, 0.5))
@@ -448,7 +469,7 @@ class SampleNode(Node):
 			box_color = QtCore.Qt.red
 		
 		scale = self.graph_view.get_scale()
-		if scale < 0.1:
+		if scale < SCALE_CUTOFF:
 			if box_color is None:
 				painter.setBrush(QtGui.QBrush(QtCore.Qt.black))
 			else:
@@ -457,11 +478,18 @@ class SampleNode(Node):
 			x = self._rect.width() / 2
 			painter.drawEllipse(x - radius, -radius, 2*radius, 2*radius)
 		else:
+			bgcolor = QtGui.QColor("white")
+			bgcolor.setAlphaF(0.8)
+			painter.setBrush(QtGui.QBrush(bgcolor))
+			painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+			painter.drawRect(self._rect)
+			painter.setBrush(QtGui.QBrush())
+			painter.setPen(QtGui.QPen(QtCore.Qt.black, 1))
+			painter.drawPicture(0, 0, self.picture)
 			if box_color is not None:
 				painter.setPen(QtGui.QPen(box_color, 1))
 				painter.drawRect(self._rect)
-			painter.drawPicture(0, 0, self.picture)
-	
+
 	def update_tooltip(self):
 		
 		buffer = QtCore.QBuffer()
@@ -474,6 +502,7 @@ class SampleNode(Node):
 		rect = self._rect.marginsAdded(QtCore.QMargins(10, 10, 10, 10))
 		rect = QtCore.QRectF(rect.x(), rect.y(), rect.width()*0.8, rect.height())
 		painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+		painter.setBrush(QtGui.QBrush(QtCore.Qt.white))
 		painter.drawRect(rect)
 		painter.setPen(QtGui.QPen(QtCore.Qt.black, 0.5))
 		painter.drawPicture(0, 0, self.picture)
@@ -890,16 +919,16 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		if item.tool_tip is None:
 			self._tool_tip.hide()
 		else:
-			self._tool_tip.show(item.tool_tip, item.node_id)
+			self._tool_tip.show(item.tool_tip, item)
 	
 	def on_hover_leave(self):
 		
 		if self._tool_tip.isVisible():
 			if self._tool_tip.underMouse():
 				return
-			if self._nodes[self._tool_tip.node_id].isUnderMouse():
+			if self._tool_tip.node().isUnderMouse():
 				return
-			self._tool_tip.hide(TOOLTIP_DELAY)
+			self._tool_tip.hide(TOOLTIP_HIDE_DELAY)
 	
 	@QtCore.Slot()
 	def on_selected(self):
@@ -916,6 +945,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 	
 	def mousePressEvent(self, event):
 		
+		self._tool_tip.hide()
 		if event.button() == QtCore.Qt.LeftButton:
 			self.setDragMode(QtWidgets.QGraphicsView.RubberBandDrag)
 			self.setCursor(QtCore.Qt.ArrowCursor)

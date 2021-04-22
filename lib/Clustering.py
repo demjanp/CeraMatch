@@ -349,31 +349,19 @@ class Clustering(DModule):
 			if item is not None:
 				self._data[i] = copy(item)
 	
-	# TODO replace by get_data()
-	def _get_cluster_data(self):
-		# returns [[sample_id, cluster_name], ...]
+	def get_first_sample(self, cluster_node_id):
+		# returns node_id of first sample in cluster
 		
-		sample_class, id_descr = self.model.lap_descriptors["Custom_Id"]
-		
-		if not self.model.cluster_class:
-			return []
-		
-		data = []
-		for clu_id in self.model.classes[self.model.cluster_class].objects:
-			obj_clu = self.model.objects[clu_id]
-			name = obj_clu.descriptors["Name"].label.value
-			for obj_id in obj_clu.relations["contains"]:
-				obj_sample = self.model.objects[obj_id]
-				if not sample_class in obj_sample.classes:
-					continue
-				sample_id = obj_sample.descriptors[id_descr].label.value
-				data.append([sample_id, name])
-		data = natsorted(data)
-		return data
+		if cluster_node_id not in self._data[0]:
+			return None
+		return self._data[0][cluster_node_id][0]
 	
 	def export_xlsx(self, path):
 		
-		data = self._get_cluster_data()
+		data = []
+		for cluster_node_id in self._data[0]:
+			for sample_node_id in self._data[0][cluster_node_id]:
+				data.append([self._data[3][sample_node_id], self._data[3][cluster_node_id]])
 		if not data:
 			return
 		
@@ -393,7 +381,10 @@ class Clustering(DModule):
 	
 	def export_csv(self, path):
 		
-		data = self._get_cluster_data()
+		data = []
+		for cluster_node_id in self._data[0]:
+			for sample_node_id in self._data[0][cluster_node_id]:
+				data.append([self._data[3][sample_node_id], self._data[3][cluster_node_id]])
 		if not data:
 			return
 		

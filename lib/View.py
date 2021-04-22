@@ -164,11 +164,8 @@ class View(DModule, QtWidgets.QMainWindow):
 	
 	def save_catalog(self, path, scale = 1/3, dpi = 600, line_width = 0.5):
 		
-		# TODO replace _get_cluster_data by clustering.get_data
-		data = self.model.clustering._get_cluster_data()  # [[sample_id, cluster_label], ...]
-		clusters = defaultdict(list)
-		for sample_id, label in data:
-			clusters[label].append(sample_id)
+		clusters, _, _, labels, _ = self.model.clustering.get_data()
+		clusters = dict([(labels[cluster_node_id], [labels[sample_node_id] for sample_node_id in clusters[cluster_node_id]]) for cluster_node_id in clusters])
 		save_catalog(path, self.model.sample_data, clusters, scale, dpi, line_width, progress = self.progress)
 	
 	@QtCore.Slot()
