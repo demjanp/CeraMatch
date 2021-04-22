@@ -77,8 +77,8 @@ class View(DModule, QtWidgets.QMainWindow):
 		self.menu.load_recent()
 		
 		self.set_title()
-#		self.setGeometry(100, 100, 1024, 768)
-		self.setGeometry(500, 100, 1024, 768)  # DEBUG
+		self.setGeometry(100, 100, 1024, 768)
+#		self.setGeometry(500, 100, 1024, 768)  # DEBUG
 		
 		self.descriptor_group.load_data.connect(self.on_load_data)
 		self.descriptor_group.cluster_classes_changed.connect(self.on_cluster_classes_changed)

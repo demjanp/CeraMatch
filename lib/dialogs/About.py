@@ -28,7 +28,7 @@ class About(Dialog):
 		path = os.path.join(os.path.dirname(__file__), "..", "THIRDPARTY.TXT").replace("\\", "/")
 		self.label = QtWidgets.QLabel('''
 <h2>CeraMatch</h2>
-<h4>Shape matching and clustering of ceramic shapes</h4>
+<h4>Visual shape-matching and typology of ceramics</h4>
 <p>Version %s (%s)</p>
 <p>Copyright © <a href="mailto:peter.demjan@gmail.com">Peter Demján</a> 2019 - %s</p>
 <p>&nbsp;</p>

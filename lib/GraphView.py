@@ -19,21 +19,101 @@ EDGE_TYPE = QtWidgets.QGraphicsItem.UserType + 2
 SCALE_DRAWINGS = 0.5
 LINE_WIDTH = 1
 SCALE_TOOLTIP = 1
+TOOLTIP_DELAY = 200
+
+class ToolTip(QtWidgets.QLabel):
+	
+	def __init__(self):
+		
+		self.node_id = None
+		
+		QtWidgets.QLabel.__init__(self)
+		
+		self.setWindowFlags(QtCore.Qt.ToolTip)
+		self.setFrameShape(QtWidgets.QFrame.StyledPanel)
+		self.setStyleSheet("QLabel { background-color : white; }")
+		
+		self.hide_timer = QtCore.QTimer(singleShot = True, timeout = self.on_hide_timer)
+		self.hide()
+	
+	def move(self, pos):
+		
+		self.ensurePolished()
+		geo = QtCore.QRect(pos, self.sizeHint())
+		try:
+			screen = QtWidgets.QApplication.screenAt(pos)
+		except:
+			for screen in QtWidgets.QApplication.screens():
+				if pos in screen.geometry():
+					break
+			else:
+				screen = None
+		if not screen:
+			screen = QtWidgets.QApplication.primaryScreen()
+		screenGeo = screen.availableGeometry()
+		if geo.bottom() > screenGeo.bottom():
+			geo.moveBottom(screenGeo.bottom())
+		if geo.top() < screenGeo.top():
+			geo.moveTop(screenGeo.top())
+		if geo.right() > screenGeo.right():
+			geo.moveRight(screenGeo.right())
+		if geo.left() < screenGeo.left():
+			geo.moveLeft(screenGeo.left())
+		QtWidgets.QLabel.move(self, geo.topLeft())
+	
+	def show(self, text, node_id):
+		
+		self.hide_timer.stop()
+		self.node_id = node_id
+		self.setText(text)
+		self.adjustSize()
+		self.move(QtGui.QCursor.pos())
+		QtWidgets.QLabel.show(self)
+	
+	def hide(self, delay = None):
+		
+		if delay is None:
+			self.hide_timer.stop()
+			QtWidgets.QLabel.hide(self)
+			return
+		if self.underMouse():
+			return
+		self.hide_timer.start(delay)
+	
+	@QtCore.Slot()
+	def on_hide_timer(self):
+		
+		self.hide()
+	
+	def leaveEvent(self, event):
+		
+		if self.isVisible():
+			self.hide(TOOLTIP_DELAY)
+		
+		QtWidgets.QLabel.leaveEvent(self, event)
+	
+	def mousePressEvent(self, event):
+		
+		self.hide()
+		
+		QtWidgets.QLabel.mousePressEvent(self, event)
 
 class Node(QtWidgets.QGraphicsItem):
 	
-	def __init__(self, model, graph_view, node_id, radius = 10):
+	def __init__(self, model, graph_view, node_id, label, radius = 10):
 		
 		self.model = weakref.ref(model)
 		self.graph_view = graph_view
 		
 		self.node_id = node_id
+		self.label = label
 		self.radius = radius
 		self.edges = set([])  # [Edge, ...]
 		self.cluster = None
 		
 		self._focused_items = set([])
 		self.moved = False
+		self.tool_tip = None
 		
 		QtWidgets.QGraphicsItem.__init__(self)
 		
@@ -107,6 +187,14 @@ class Node(QtWidgets.QGraphicsItem):
 	def hoverEnterEvent(self, event):
 		
 		self.graph_view.on_hover_item(self)
+		
+		QtWidgets.QGraphicsItem.hoverEnterEvent(self, event)
+	
+	def hoverLeaveEvent(self, event):
+		
+		self.graph_view.on_hover_leave()
+		
+		QtWidgets.QGraphicsItem.hoverLeaveEvent(self, event)
 	
 	def itemChange(self, change, value):
 		
@@ -184,27 +272,44 @@ class Node(QtWidgets.QGraphicsItem):
 						changed = True
 		self.graph_view.history.save()
 		self.graph_view.broadcast(Broadcasts.VIEW_ACTION)
-
+	
 class ClusterNode(Node):
 	
-	def __init__(self, model, graph_view, node_id, radius = 15):
+	def __init__(self, model, graph_view, node_id, label, radius = 5):
 		
-		self.children = set([])
-		self._prev_pos = None
+		self.children = set([])  # {weakref.ref(node), ...}
 		
-		Node.__init__(self, model, graph_view, node_id, radius)
+		Node.__init__(self, model, graph_view, node_id, label, radius)
 		
 		self.setFlag(QtWidgets.QGraphicsItem.ItemIsFocusable, True)
+	
+	def shape(self):
+		# for collision detection
+		
+		path = QtGui.QPainterPath()
+		scale = self.graph_view.get_scale()
+		radius = self.radius / scale
+		path.addEllipse(-radius, -radius, 2*radius, 2*radius)
+		return path
+	
+	def boundingRect(self):
+		
+		adjust = 2		
+		scale = self.graph_view.get_scale()
+		radius = self.radius / scale
+		return QtCore.QRectF(-radius - adjust, -radius - adjust, (2*radius) + 3 + adjust, (2*radius) + 3 + adjust)
 	
 	def set_children(self, children):
 		
 		self.children.clear()
+		self.setToolTip("")
 		for child in children:
 			child.set_cluster(self)
 			self.children.add(weakref.ref(child))
 	
 	def add_child(self, node):
 		
+		self.setToolTip("")
 		node_ref = weakref.ref(node)
 		if node_ref not in self.children:
 			self.children.add(node_ref)
@@ -212,6 +317,7 @@ class ClusterNode(Node):
 	
 	def remove_child(self, node):
 		
+		self.setToolTip("")
 		node_ref = weakref.ref(node)
 		if node_ref in self.children:
 			self.children.remove(node_ref)
@@ -228,7 +334,65 @@ class ClusterNode(Node):
 		else:
 			painter.setBrush(QtGui.QBrush(QtCore.Qt.lightGray))
 		painter.setPen(QtGui.QPen(QtCore.Qt.darkGray, pen_width))
-		painter.drawEllipse(-self.radius, -self.radius, 2*self.radius, 2*self.radius)
+		
+		scale = self.graph_view.get_scale()
+		radius = self.radius / scale
+		
+		painter.drawEllipse(-radius, -radius, 2*radius, 2*radius)
+	
+	def update_tooltip(self, gap = 5):
+		
+		nodes = [node() for node in self.children]
+		n_side = len(nodes)
+		if n_side > 3:
+			n_side = max(1, int(n_side**0.5))
+		x = 0
+		y = 0
+		h_max = 0
+		n = 0
+		x_max, y_max = 0, 0
+		positions = []
+		for node in nodes:
+			positions.append([x + gap, y + gap])
+			w, h = node._rect.width()*0.8 + gap, node._rect.height() + gap
+			h_max = max(h_max, h)
+			x += w
+			n += 1
+			if n > n_side:
+				x = 0
+				y += h_max
+				h_max = 0
+				n = 0
+			x_max = max(x_max, x + w)
+			y_max = max(y_max, y + h)
+		if n_side == len(nodes):
+			x_max -= w
+		
+		scale = SCALE_TOOLTIP / SCALE_DRAWINGS
+		buffer = QtCore.QBuffer()
+		buffer.open(QtCore.QIODevice.WriteOnly)
+		gen = QtSvg.QSvgGenerator()
+		gen.setOutputDevice(buffer)
+		painter = QtGui.QPainter(gen)
+		painter.scale(scale, scale)
+		painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+		rect = QtCore.QRectF(0, 0, x_max, y_max)
+		painter.drawRect(rect)
+		painter.setPen(QtGui.QPen(QtCore.Qt.black, 0.5))
+		for i in range(len(nodes)):
+			x, y = positions[i]
+			painter.drawPicture(x, y, nodes[i].picture)
+		
+		painter.drawText(rect, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.label)
+		painter.end()
+		self.tool_tip = "<img src=\"data:image/png;base64,%s\">" % (bytes(buffer.data().toBase64()).decode())
+	
+	def hoverEnterEvent(self, event):
+		
+		if (self.tool_tip is None) and self.children:
+			self.update_tooltip()
+		
+		Node.hoverEnterEvent(self, event)
 	
 	def mousePressEvent(self, event):
 		
@@ -247,9 +411,9 @@ class ClusterNode(Node):
 	
 class SampleNode(Node):
 	
-	def __init__(self, model, graph_view, sample_id, descriptors):
+	def __init__(self, model, graph_view, sample_id, label, descriptors):
 		
-		Node.__init__(self, model, graph_view, sample_id)
+		Node.__init__(self, model, graph_view, sample_id, label)
 		
 		self.picture = QtGui.QPicture()
 		painter = QtGui.QPainter(self.picture)
@@ -282,32 +446,47 @@ class SampleNode(Node):
 			box_color = QtCore.Qt.gray
 		elif option.state & QtWidgets.QStyle.State_Selected:
 			box_color = QtCore.Qt.red
-		if box_color is not None:
-			painter.setPen(QtGui.QPen(box_color, 1))
-			painter.drawRect(self._rect)
-		painter.drawPicture(0, 0, self.picture)
-	
-	def hoverMoveEvent(self, event):
 		
-		if not self.toolTip():
-			buffer = QtCore.QBuffer()
-			buffer.open(QtCore.QIODevice.WriteOnly)
-			scale = SCALE_TOOLTIP / SCALE_DRAWINGS
-			gen = QtSvg.QSvgGenerator()
-			gen.setOutputDevice(buffer)
-			painter = QtGui.QPainter(gen)
-			painter.scale(scale, scale)
-			rect = self._rect.marginsAdded(QtCore.QMargins(10, 10, 10, 10))
-			rect = QtCore.QRectF(rect.x(), rect.y(), rect.width()*0.8, rect.height())
-			painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
-			painter.drawRect(rect)
-			painter.setPen(QtGui.QPen(QtCore.Qt.black, 0.5))
+		scale = self.graph_view.get_scale()
+		if scale < 0.1:
+			if box_color is None:
+				painter.setBrush(QtGui.QBrush(QtCore.Qt.black))
+			else:
+				painter.setBrush(QtGui.QBrush(box_color))
+			radius = 1 / scale
+			x = self._rect.width() / 2
+			painter.drawEllipse(x - radius, -radius, 2*radius, 2*radius)
+		else:
+			if box_color is not None:
+				painter.setPen(QtGui.QPen(box_color, 1))
+				painter.drawRect(self._rect)
 			painter.drawPicture(0, 0, self.picture)
-			painter.drawText(rect, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.node_id[1:])
-			painter.end()
-			self.setToolTip("<img src=\"data:image/png;base64,%s\">" % (bytes(buffer.data().toBase64()).decode()))
+	
+	def update_tooltip(self):
 		
-		Node.hoverMoveEvent(self, event)
+		buffer = QtCore.QBuffer()
+		buffer.open(QtCore.QIODevice.WriteOnly)
+		scale = SCALE_TOOLTIP / SCALE_DRAWINGS
+		gen = QtSvg.QSvgGenerator()
+		gen.setOutputDevice(buffer)
+		painter = QtGui.QPainter(gen)
+		painter.scale(scale, scale)
+		rect = self._rect.marginsAdded(QtCore.QMargins(10, 10, 10, 10))
+		rect = QtCore.QRectF(rect.x(), rect.y(), rect.width()*0.8, rect.height())
+		painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+		painter.drawRect(rect)
+		painter.setPen(QtGui.QPen(QtCore.Qt.black, 0.5))
+		painter.drawPicture(0, 0, self.picture)
+		painter.drawText(rect, QtCore.Qt.AlignCenter | QtCore.Qt.AlignBottom, self.label)
+		painter.end()
+		self.tool_tip = "<img src=\"data:image/png;base64,%s\">" % (bytes(buffer.data().toBase64()).decode())
+	
+	def hoverEnterEvent(self, event):
+		
+		if self.tool_tip is None:
+			self.update_tooltip()
+		
+		Node.hoverEnterEvent(self, event)
 	
 	def mouseDoubleClickEvent(self, event):
 		
@@ -387,6 +566,7 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		self._edges = []  # [Edge, ...]
 		self._labels = {} # {node_id: label, ...}
 		self._mouse_prev = None
+		self._tool_tip = ToolTip()
 		
 		DModule.__init__(self)
 		QtWidgets.QGraphicsView.__init__(self)
@@ -423,9 +603,11 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 	
 	def scale_view(self, factor):
 		
-		f = self.matrix().scale(factor, factor).mapRect(QtCore.QRectF(0, 0, 1, 1)).width()
-		
 		self.scale(factor, factor)
+	
+	def get_scale(self):
+		
+		return self.transform().m11()
 	
 	def get_selected(self):
 		
@@ -556,11 +738,11 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		
 		for node_id in nodes:
 			if node_id.startswith("@") and (node_id[1:] in sample_data):
-				self._nodes[node_id] = SampleNode(self.model, self, node_id, sample_data[node_id[1:]][1])
+				self._nodes[node_id] = SampleNode(self.model, self, node_id, self._labels[node_id], sample_data[node_id[1:]][1])
 			elif node_id in clusters:
-				self._nodes[node_id] = ClusterNode(self.model, self, node_id)
+				self._nodes[node_id] = ClusterNode(self.model, self, node_id, self._labels[node_id])
 			else:
-				self._nodes[node_id] = Node(self.model, self, node_id)
+				self._nodes[node_id] = Node(self.model, self, node_id, self._labels[node_id])
 		
 		for node_id in self._nodes:
 			if isinstance(self._nodes[node_id], ClusterNode):
@@ -613,7 +795,8 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		x_mean /= len(children)
 		cx, cy = x_mean, y_max + 3
 		cluster_id = "#%d" % (max([int(node_id[1:]) if node_id.startswith("#") else 0 for node_id in self._nodes]) + 1)
-		self._nodes[cluster_id] = ClusterNode(self.model, self, cluster_id)
+		self._labels[cluster_id] = "Manual_%s" % (cluster_id[1:])
+		self._nodes[cluster_id] = ClusterNode(self.model, self, cluster_id, self._labels[cluster_id])
 		self.scene().addItem(self._nodes[cluster_id])
 		self._nodes[cluster_id].set_pos(cx, cy)
 		
@@ -703,6 +886,20 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 			self.view.statusbar.message(str(self._labels[item.node_id]))
 		else:
 			self.view.statusbar.message(str(item.node_id))
+		
+		if item.tool_tip is None:
+			self._tool_tip.hide()
+		else:
+			self._tool_tip.show(item.tool_tip, item.node_id)
+	
+	def on_hover_leave(self):
+		
+		if self._tool_tip.isVisible():
+			if self._tool_tip.underMouse():
+				return
+			if self._nodes[self._tool_tip.node_id].isUnderMouse():
+				return
+			self._tool_tip.hide(TOOLTIP_DELAY)
 	
 	@QtCore.Slot()
 	def on_selected(self):
@@ -747,4 +944,6 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		self._mouse_prev = None
 		
 		QtWidgets.QGraphicsView.mouseReleaseEvent(self, event)
+	
+	
 	
