@@ -367,7 +367,7 @@ def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width
 	
 	td = QtGui.QTextDocument()
 	font = td.defaultFont()
-	font.setPointSize(24)
+	font.setPointSize(48)
 	td.setDefaultFont(font)
 	
 	x = 0

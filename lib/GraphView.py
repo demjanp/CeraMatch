@@ -418,6 +418,8 @@ class ClusterNode(Node):
 	def mousePressEvent(self, event):
 		
 		Node.mousePressEvent(self, event)
+		
+		self.graph_view.scene().clearSelection()
 		for node in self.children:
 			node().setSelected(True)
 		self.setSelected(True)
@@ -462,18 +464,15 @@ class SampleNode(Node):
 	
 	def paint(self, painter, option, widget):
 		
-		box_color = None
-		if option.state & QtWidgets.QStyle.State_Sunken:
-			box_color = QtCore.Qt.gray
-		elif option.state & QtWidgets.QStyle.State_Selected:
-			box_color = QtCore.Qt.red
+		selected = False
+		color = QtCore.Qt.black
+		if option.state & QtWidgets.QStyle.State_Selected:
+			color = QtCore.Qt.red
+			selected = True
 		
 		scale = self.graph_view.get_scale()
 		if scale < SCALE_CUTOFF:
-			if box_color is None:
-				painter.setBrush(QtGui.QBrush(QtCore.Qt.black))
-			else:
-				painter.setBrush(QtGui.QBrush(box_color))
+			painter.setBrush(QtGui.QBrush(color))
 			radius = 1 / scale
 			x = self._rect.width() / 2
 			painter.drawEllipse(x - radius, -radius, 2*radius, 2*radius)
@@ -481,13 +480,15 @@ class SampleNode(Node):
 			bgcolor = QtGui.QColor("white")
 			bgcolor.setAlphaF(0.8)
 			painter.setBrush(QtGui.QBrush(bgcolor))
-			painter.setPen(QtGui.QPen(QtCore.Qt.white, 0))
+			painter.setPen(QtGui.QPen(bgcolor, 1))
 			painter.drawRect(self._rect)
-			painter.setBrush(QtGui.QBrush())
-			painter.setPen(QtGui.QPen(QtCore.Qt.black, 1))
+			
+			painter.setBrush(QtGui.QBrush(color))
+			painter.setPen(QtGui.QPen(color, 1))
 			painter.drawPicture(0, 0, self.picture)
-			if box_color is not None:
-				painter.setPen(QtGui.QPen(box_color, 1))
+			
+			if selected:
+				painter.setBrush(QtGui.QBrush())
 				painter.drawRect(self._rect)
 
 	def update_tooltip(self):
@@ -875,6 +876,11 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		
 		self.scene().clearSelection()
 		
+		scale = self.get_scale()
+		scale_tgt = SCALE_CUTOFF * 2
+		if scale < scale_tgt:
+			self.scale_view(scale_tgt / scale)
+		
 		rect = self.scene().itemsBoundingRect()
 		m = min(rect.width(), rect.height())*0.05
 		rect = rect.marginsAdded(QtCore.QMarginsF(m, m, m, m))
@@ -976,4 +982,5 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		QtWidgets.QGraphicsView.mouseReleaseEvent(self, event)
 	
 	
-	
+
+
