@@ -374,7 +374,7 @@ class ClusterNode(Node):
 		positions = []
 		for node in nodes:
 			positions.append([x + gap, y + gap])
-			w, h = node._rect.width()*0.8 + gap, node._rect.height() + gap
+			w, h = node._rect.width() + gap, node._rect.height() + gap
 			h_max = max(h_max, h)
 			x += w
 			n += 1

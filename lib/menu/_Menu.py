@@ -12,6 +12,7 @@ from lib.toolbar.ExportDendrogram import ExportDendrogram
 from lib.toolbar.ExportCatalog import ExportCatalog
 from lib.toolbar._Toolbar import Separator
 
+from lib.menu.SaveAsFile import SaveAsFile
 from lib.menu.About import About
 from lib.menu.ClearRecent import ClearRecent
 
@@ -20,7 +21,7 @@ import json
 import os
 
 MENUS = {
-	"Data": [Connect, Save, Deposit, Separator, ImportClustering, ExportClustering, Separator, ClearRecent,],
+	"Data": [Connect, Save, SaveAsFile, Deposit, Separator, ImportClustering, ExportClustering, Separator, ClearRecent,],
 	"Edit": [Undo, Redo,],
 	"Export PDF": [ExportDendrogram, ExportCatalog,],
 	"Help": [About,],

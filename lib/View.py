@@ -17,7 +17,6 @@ from deposit.commander.Registry import (Registry)
 from deposit.DModule import (DModule)
 
 from PySide2 import (QtWidgets, QtCore, QtGui)
-from collections import defaultdict
 import deposit
 import res
 import os

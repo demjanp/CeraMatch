@@ -4,7 +4,7 @@ block_cipher = None
 
 
 a = Analysis(['cm.py'],
-             pathex=['C:\\Documents\\CeraMatch'],
+             pathex=['C:\\documents_synced\\CeraMatch'],
              binaries=[],
              datas=[],
              hiddenimports=['pywt', 'pywt._extensions._cwt'],

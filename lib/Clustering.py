@@ -480,6 +480,7 @@ class Clustering(DModule):
 		data = set([])
 		with open(path, "r", newline = "") as f:
 			reader = csv.reader(f, dialect = csv.excel, quoting=csv.QUOTE_ALL)
+			next(reader)
 			for row in reader:
 				sample_id = str(row[columns[sample_column]]).strip()
 				cluster = str(row[columns[cluster_column]]).strip()

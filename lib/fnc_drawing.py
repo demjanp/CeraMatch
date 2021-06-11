@@ -122,7 +122,7 @@ def get_outer_profile(profile, left_side = False, rim = None, bottom = None):
 		profile = profile[::-1]
 	return profile
 
-def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale = 1, color = QtCore.Qt.black):
+def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale = 1, color = QtCore.Qt.black, caption = None):
 	
 	def draw_polygon(coords, closed = True):
 		
@@ -306,6 +306,15 @@ def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale
 	painter.setBrush(QtGui.QBrush())
 	for coords in breaks:
 		draw_polygon(coords, closed = False)
+	
+	if caption is not None:
+		painter.setFont(QtGui.QFont("Arial", max(1, int(round(8*scale)))))
+		fm = QtGui.QFontMetrics(painter.font())
+		rect = fm.boundingRect(str(caption))
+		xd = rect.width() / 2
+		yd = rect.height()
+		x, y = (extent[2] - extent[0]) / 2, extent[3]
+		painter.drawText(x - xd, y + yd, str(caption))
 
 def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width = 0.5, progress = None):
 	# sample_data = {sample_id: [obj_id, descriptors], ...}
@@ -321,7 +330,7 @@ def save_catalog(path, sample_data, clusters, scale = 1/3, dpi = 600, line_width
 		
 		picture = QtGui.QPicture()
 		painter = QtGui.QPainter(picture)
-		render_drawing(descriptors, painter, line_width, scale = scale)
+		render_drawing(descriptors, painter, line_width, scale = scale, caption = sample_id)
 		painter.end()
 		return picture
 	

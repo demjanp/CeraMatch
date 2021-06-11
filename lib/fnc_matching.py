@@ -544,7 +544,10 @@ def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
 		# calculate centroid distance
 		n1 = len(cluster1)
 		n2 = len(cluster2)
-		d = np.sqrt((d_sq[:,cluster12][cluster12].sum() - (n1 + n2)*(d_sq[:,cluster1][cluster1].sum() / n1 + d_sq[:,cluster2][cluster2].sum() / n2)) / (n1*n2))
+		if (n1 == 1) or (n2 == 1):
+			d = np.sqrt(d_sq[:,cluster12][cluster12]).mean()
+		else:
+			d = np.sqrt((np.triu(d_sq[:,cluster12][cluster12]).sum() - (n1 + n2)*(np.triu(d_sq[:,cluster1][cluster1]).sum() / n1 + np.triu(d_sq[:,cluster2][cluster2]).sum() / n2)) / (n1*n2))
 		
 		return d
 	
@@ -565,8 +568,6 @@ def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
 	D = D / D.mean(axis = (0,1))
 	
 	d_sq = (D**2).sum(axis = 2)
-	
-	limit = D.mean() * limit
 	
 	clusters = dict([(idx, [idx]) for idx in range(n_samples)])
 	
@@ -701,7 +702,10 @@ def update_clusters(D, clusters, progress = None):
 		# calculate centroid distance
 		n1 = len(cluster1)
 		n2 = len(cluster2)
-		d = np.sqrt((d_sq[:,cluster12][cluster12].sum() - (n1 + n2)*(d_sq[:,cluster1][cluster1].sum() / n1 + d_sq[:,cluster2][cluster2].sum() / n2)) / (n1*n2))
+		if (n1 == 1) or (n2 == 1):
+			d = np.sqrt(d_sq[:,cluster12][cluster12]).mean()
+		else:
+			d = np.sqrt((np.triu(d_sq[:,cluster12][cluster12]).sum() - (n1 + n2)*(np.triu(d_sq[:,cluster1][cluster1]).sum() / n1 + np.triu(d_sq[:,cluster2][cluster2]).sum() / n2)) / (n1*n2))
 		
 		return d
 	
@@ -736,7 +740,7 @@ def update_clusters(D, clusters, progress = None):
 	
 	d_comb = np.full((n_samples, n_samples), np.inf, dtype = float)
 	for idx1, idx2 in combinations(list(clusters.keys()), 2):
-		d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], D)
+		d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], d_sq)
 		d_comb[idx2,idx1] = d_comb[idx1,idx2]
 	
 	clusters_lookup = dict([(idx, n_samples + i) for i, idx in enumerate(sorted(clusters.keys()))])
