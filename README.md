@@ -3,6 +3,8 @@ Visual shape-matching and typology of ceramics
 
 Created on 18. 5. 2019
 
+[upcoming paper] Demján, P., Pavúk, P., Roosevelt Ch. H. Laser-Aided Profile Measurement in Documentation and Typological Analysis of Ceramics.
+
 ### Author of the code:
 Peter Demján (peter.demjan@gmail.com)
 
