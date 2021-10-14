@@ -1,6 +1,6 @@
 rmdir dist\cm /S /Q
 
-pyinstaller cm.spec
+pyinstaller cm.spec --hidden-import="sklearn.utils._cython_blas" --hidden-import="sklearn.neighbors.typedefs" --hidden-import="sklearn.neighbors.quad_tree" --hidden-import="sklearn.tree._utils" --hidden-import="sklearn.neighbors._typedefs" --hidden-import="sklearn.utils._weight_vector" --hidden-import="sklearn.neighbors._quad_tree" --hidden-import="skimage.filters.rank.core_cy_3d"
 
 robocopy /e res dist\cm\res
 robocopy /e deposit dist\cm\deposit
