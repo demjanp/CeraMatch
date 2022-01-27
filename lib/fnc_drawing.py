@@ -122,7 +122,7 @@ def get_outer_profile(profile, left_side = False, rim = None, bottom = None):
 		profile = profile[::-1]
 	return profile
 
-def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale = 1, color = QtCore.Qt.black, caption = None):
+def render_drawing(descriptors, painter, linewidth = 1, scale = 1, color = QtCore.Qt.black, caption = None):
 	
 	def draw_polygon(coords, closed = True):
 		
@@ -171,6 +171,7 @@ def render_drawing(descriptors, painter, linewidth = 1, left_side = False, scale
 	rim = get_type_value(descriptors["profile"], "Profile_Rim", int, 0)
 	bottom = get_type_value(descriptors["profile"], "Profile_Bottom", int, 0)
 	radius = get_type_value(descriptors["profile"], "Profile_Radius", float, 0) * scale
+	left_side = get_type_value(descriptors["profile"], "Profile_Left_Side", int, 0)
 	
 	radius_point = get_coords(descriptors["profile"], "Profile_Radius_Point", scale)
 	rim_point = get_coords(descriptors["profile"], "Profile_Rim_Point", scale)
