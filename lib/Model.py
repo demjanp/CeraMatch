@@ -120,9 +120,19 @@ class Model(Store):
 			descriptors = self.sample_data[sample_id][1]
 			profile = np.array(descriptors["profile"]["Profile_Geometry"].coords[0])
 			radius = float(descriptors["profile"]["Profile_Radius"].value)
+			left_side = int(descriptors["profile"]["Profile_Left_Side"].value)
+			if left_side:
+				profile *= [-1,1]
+				if ("Profile_Rim_Point" in descriptors["profile"]) and descriptors["profile"]["Profile_Rim_Point"]:
+					rim_point = np.array(descriptors["profile"]["Profile_Rim_Point"].coords[0])
+				else:
+					rim_point = get_rim(profile)
+				rim_point *= [-1,1]
+				profile -= rim_point
 			profile = get_reduced(profile, 0.5)
 			profile = get_interpolated(profile, 0.5)
 			profiles[sample_id] = [profile, radius]
+		
 		self.distance = calc_distances(profiles, self.distance, progress = self.view.progress)
 		
 		if self.distance is None:

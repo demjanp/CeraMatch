@@ -9,3 +9,4 @@ robocopy /e pygraphviz dist\cm\pygraphviz
 copy cm_icon.ico dist\cm
 copy LICENSE dist\cm
 copy THIRDPARTY.TXT dist\cm
+python make_ifp.py
