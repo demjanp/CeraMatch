@@ -590,6 +590,7 @@ def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
 	D = D - mins
 	D[mask] = 0
 	D = D / D.mean(axis = (0,1))
+	D = D[:,:,~np.isnan(D).any(axis = (0,1))]
 	
 	d_sq = (D**2).sum(axis = 2)
 	
@@ -750,6 +751,7 @@ def update_clusters(D, clusters, progress = None):
 	D = D - mins
 	D[mask] = 0
 	D = D / D.mean(axis = (0,1))
+	D = D[:,:,~np.isnan(D).any(axis = (0,1))]
 	
 	d_sq = (D**2).sum(axis = 2)
 	
@@ -768,6 +770,7 @@ def update_clusters(D, clusters, progress = None):
 	for idx1, idx2 in combinations(list(clusters.keys()), 2):
 		d_comb[idx1,idx2] = _calc_dist(clusters[idx1], clusters[idx2], d_sq)
 		d_comb[idx2,idx1] = d_comb[idx1,idx2]
+	d_comb[np.isnan(d_comb)] = np.inf
 	
 	clusters_lookup = dict([(idx, n_samples + i) for i, idx in enumerate(sorted(clusters.keys()))])
 	joined_clusters = dict([(clusters_lookup[idx], clusters_lookup[idx]) for idx in clusters_lookup])
