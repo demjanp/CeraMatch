@@ -754,10 +754,10 @@ class GraphView(DModule, QtWidgets.QGraphicsView):
 		
 		if not nodes:
 			nodes = set([])
-			for sample_id in sample_data:
-				node_id = "@%s" % (sample_id)
-				nodes.add(node_id)
-				labels[node_id] = str(sample_id)
+		for sample_id in sample_data:
+			node_id = "@%s" % (sample_id)
+			nodes.add(node_id)
+			labels[node_id] = str(sample_id)
 		
 		self._labels = labels
 		nodes = set(nodes)

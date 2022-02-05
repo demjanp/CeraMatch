@@ -139,7 +139,7 @@ class Model(Store):
 			self._has_distance = False
 			return
 		
-		self._has_distance = (not ((self.distance == np.inf) | (self.distance == 0)).all())
+		self._has_distance = (not (self.distance == np.inf).any())
 		
 		ijs = list(combinations(range(len(self.sample_ids)), 2))
 		cmax = len(ijs)
@@ -197,7 +197,7 @@ class Model(Store):
 						self.distance[i,j,k] = d
 						self.distance[j,i,k] = d
 		
-		self._has_distance = (not ((self.distance == np.inf) | (self.distance == 0)).all())
+		self._has_distance = (not (self.distance == np.inf).any())
 	
 	def load_samples(self):
 		# returns clusters, nodes, edges, labels, positions

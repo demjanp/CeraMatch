@@ -434,7 +434,7 @@ def dist_worker(ijs_mp, collect_mp, data, sample_ids, select_components):
 		distance[j, i, 1] = ax_dist
 		distance[j, i, 2] = d_dist
 		distance[j, i, 3] = d_rim_dist
-		
+	
 	collect_mp.append(distance)
 	
 def calc_distances(profiles, select_components, distance = None, progress = None):
@@ -538,6 +538,8 @@ def calc_distances(profiles, select_components, distance = None, progress = None
 	for dist in collect_mp:
 		mask = (dist != -2)
 		distance[mask] = dist[mask]
+	mask = (distance == np.inf)
+	distance[mask] = distance[~mask].max()*2
 	
 	progress.update_state(text = "Calculating Distances...", value = cmax, maximum = cmax)
 	
