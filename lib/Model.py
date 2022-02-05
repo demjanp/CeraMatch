@@ -111,7 +111,7 @@ class Model(Store):
 		self.distance = None
 		self._has_distance = False
 	
-	def calc_distance(self):
+	def calc_distance(self, diam, axis, dice, dice_rim):
 		
 		if not self.has_samples():
 			return
@@ -133,13 +133,13 @@ class Model(Store):
 			profile = get_interpolated(profile, 0.5)
 			profiles[sample_id] = [profile, radius]
 		
-		self.distance = calc_distances(profiles, self.distance, progress = self.view.progress)
+		self.distance = calc_distances(profiles, [diam, axis, dice, dice_rim], self.distance, progress = self.view.progress)
 		
 		if self.distance is None:
 			self._has_distance = False
 			return
 		
-		self._has_distance = (not (self.distance == np.inf).any())
+		self._has_distance = (not ((self.distance == np.inf) | (self.distance == 0)).all())
 		
 		ijs = list(combinations(range(len(self.sample_ids)), 2))
 		cmax = len(ijs)
@@ -197,7 +197,7 @@ class Model(Store):
 						self.distance[i,j,k] = d
 						self.distance[j,i,k] = d
 		
-		self._has_distance = (not (self.distance == np.inf).any())
+		self._has_distance = (not ((self.distance == np.inf) | (self.distance == 0)).all())
 	
 	def load_samples(self):
 		# returns clusters, nodes, edges, labels, positions

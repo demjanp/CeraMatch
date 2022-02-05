@@ -380,8 +380,9 @@ def dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor):
 	
 	return d_dist_sum, d_dist_norm
 
-def dist_worker(ijs_mp, collect_mp, data, sample_ids):
+def dist_worker(ijs_mp, collect_mp, data, sample_ids, select_components):
 	
+	do_diam, do_axis, do_dice, do_dice_rim = select_components
 	rasterize_factor = 4
 	profiles_n = len(data)
 	distance = np.zeros((profiles_n, profiles_n, 4), dtype = float) - 2
@@ -394,20 +395,35 @@ def dist_worker(ijs_mp, collect_mp, data, sample_ids):
 		profile1, axis1, radius1, keypoints1, thickness1 = data[sample_ids[i]]
 		profile2, axis2, radius2, keypoints2, thickness2 = data[sample_ids[j]]
 		
+		if (profile1 is None) or (profile2 is None):
+			continue
+		
 		r = 2*max(thickness1, thickness2)
 		
-		diam_dist = diameter_dist(axis1, radius1, axis2, radius2)
-		ax_dist = axis_dist(axis1, axis2)
+		if do_diam:
+			diam_dist = diameter_dist(axis1, radius1, axis2, radius2)
+		else:
+			diam_dist = 0.1
+		if do_axis:
+			ax_dist = axis_dist(axis1, axis2)
+		else:
+			ax_dist = 0.1
 		
-		d_dist_sum1, d_dist_norm1 = dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
-		d_dist_sum2, d_dist_norm2 = dice_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
-		d_dist = np.sqrt((d_dist_sum1 + d_dist_sum2) / (d_dist_norm1 + d_dist_norm2))
+		if do_dice:
+			d_dist_sum1, d_dist_norm1 = dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
+			d_dist_sum2, d_dist_norm2 = dice_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
+			d_dist = np.sqrt((d_dist_sum1 + d_dist_sum2) / (d_dist_norm1 + d_dist_norm2))
+		else:
+			d_dist = 0.1
 		
-		keypoints1 = np.array([keypoints1[0]])
-		keypoints2 = np.array([keypoints2[0]])
-		d_dist_sum1, d_dist_norm1 = dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
-		d_dist_sum2, d_dist_norm2 = dice_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
-		d_rim_dist = np.sqrt((d_dist_sum1 + d_dist_sum2) / (d_dist_norm1 + d_dist_norm2))
+		if do_dice_rim:
+			keypoints1 = np.array([keypoints1[0]])
+			keypoints2 = np.array([keypoints2[0]])
+			d_dist_sum1, d_dist_norm1 = dice_dist(profile1, keypoints1, profile2, keypoints2, r, rasterize_factor)
+			d_dist_sum2, d_dist_norm2 = dice_dist(profile2, keypoints2, profile1, keypoints1, r, rasterize_factor)
+			d_rim_dist = np.sqrt((d_dist_sum1 + d_dist_sum2) / (d_dist_norm1 + d_dist_norm2))
+		else:
+			d_rim_dist = 0.1
 		
 		distance[i, j, 0] = diam_dist
 		distance[i, j, 1] = ax_dist
@@ -421,8 +437,9 @@ def dist_worker(ijs_mp, collect_mp, data, sample_ids):
 		
 	collect_mp.append(distance)
 	
-def calc_distances(profiles, distance = None, progress = None):
+def calc_distances(profiles, select_components, distance = None, progress = None):
 	# profiles[sample_id] = [profile, radius]
+	# select_components = [diam, axis, dice, dice_rim]; True/False - calculate component
 	# returns distance[i, j] = [diam_dist, ax_dist, d_dist, d_rim_dist], ; where i, j = indices in sample_ids; [name]_dist = components of morphometric distance
 	
 	def _update_progress(ijs_mp, procs):
@@ -441,6 +458,7 @@ def calc_distances(profiles, distance = None, progress = None):
 	
 	rasterize_factor = 10
 	
+	do_diam, do_axis, do_dice, do_dice_rim = select_components
 	profiles_n = len(profiles)
 	sample_ids = list(profiles.keys())
 	
@@ -467,9 +485,13 @@ def calc_distances(profiles, distance = None, progress = None):
 		axis, thickness = profile_axis(profile, rasterize_factor)
 		if axis.shape[0] < 10:
 			print("\naxis error: %s (%d)\n" % (sample_id, axis.shape[0])) # DEBUG
-			raise
+			data[sample_id] = [None, None, None, None, None]
+			continue
 		axis = axis - axis[0]
-		keypoints = find_keypoints(profile, axis, thickness)
+		if do_dice or do_dice_rim:
+			keypoints = find_keypoints(profile, axis, thickness)
+		else:
+			keypoints = []
 		data[sample_id] = [profile, axis, radius, keypoints, thickness]
 		
 		if progress is None:
@@ -486,7 +508,7 @@ def calc_distances(profiles, distance = None, progress = None):
 	cmax = len(ijs_mp)
 	procs = []
 	for pi in range(min(30, mp.cpu_count() - 1)):
-		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids)))
+		procs.append(mp.Process(target = dist_worker, args = (ijs_mp, collect_mp, data, sample_ids, select_components)))
 		procs[-1].start()
 		cnt = _update_progress(ijs_mp, procs)
 		if cnt == -1:
@@ -558,6 +580,8 @@ def get_clusters(D, max_clusters = None, limit = 0.68, progress = None):
 	n_samples = D.shape[0]
 	
 	D[np.diag_indices(n_samples)] = 0
+	mask = (D == np.inf)
+	D[mask] = D[~mask].max()*2
 	mask = (D == 0)
 	mins = []
 	for idx in range(D.shape[2]):
@@ -716,6 +740,8 @@ def update_clusters(D, clusters, progress = None):
 	n_samples = D.shape[0]
 	
 	D[np.diag_indices(n_samples)] = 0
+	mask = (D == np.inf)
+	D[mask] = D[~mask].max()*2
 	mask = (D == 0)
 	mins = []
 	for idx in range(D.shape[2]):

@@ -208,8 +208,7 @@ class View(DModule, QtWidgets.QMainWindow):
 	@QtCore.Slot()
 	def on_calculate(self):
 		
-		self.model.calc_distance()
-		self.update()
+		self.dialogs.open("SelectDistances")
 	
 	@QtCore.Slot()
 	def on_delete_distance(self):
