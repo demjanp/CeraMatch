@@ -3,7 +3,7 @@ Visual shape-matching and classification of ceramics
 
 Created on 18. 5. 2019
 
-[upcoming paper] Demján, P., Pavúk, P., Roosevelt Ch. H. Laser-Aided Profile Measurement and Cluster Analysis of Ceramic Shapes.
+DEMJÁN, P. - PAVÚK, P. - ROOSEVELT, CH. H. 2022: Laser-Aided Profile Measurement and Cluster Analysis of Ceramic Shapes. Journal of Field Archaeology 47 (8). https://doi.org/10.1080/00934690.2022.2128549
 
 ### Author of the code:
 Peter Demján (peter.demjan@gmail.com)
