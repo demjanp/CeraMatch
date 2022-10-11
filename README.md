@@ -12,7 +12,11 @@ Institute of Archaeology of the Czech Academy of Sciences, Prague, v.v.i.
 
 ## Installation <a name="installation"></a>
 
-To install the latest version of Ceramatch from GitHub, use:
+For a Windows installer see:
+
+https://github.com/demjanp/ceramatch/releases/latest
+
+To install the latest version of Ceramatch as a Python module use:
 ```
 pip install ceramatch
 ```
@@ -21,10 +25,6 @@ To start the GUI execute:
 
 [bin\start_cm.py](bin\start_cm.py)
 
-
-For a Windows installer see:
-
-https://github.com/demjanp/ceramatch/releases/latest
 
 ## Acknowledgements: <a name="acknowledgements"></a>
 
