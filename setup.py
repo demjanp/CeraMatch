@@ -38,6 +38,14 @@ setup(
 	keywords="ceramics, classification, cluster analysis, morphometrics",
 	package_dir={"": "src"},
 	packages=find_packages(where="src"),
+	include_package_data=True,
+	package_data={"":[
+		"LICENSE",
+		"*.TXT",
+		"*.pyd",
+		"*.png",
+		"*.svg",
+	]},
 	python_requires=">=3.10, <4",
 	install_requires=[
 		'lap_data>=4.0.0, <4.1',
