@@ -42,10 +42,10 @@ setup(
 	install_requires=[
 		'lap_data>=4.0.0, <4.1',
 		'scipy>=1.9.1, <2',
-		'scikit-image>=0.19.3, <0.2',
+		'scikit-image',
 		'scikit-learn>=1.1.1, <1.2',
 		'opencv-python>=4.5.5, <5',
-		'numpy>=1.23.3, <1.3',
+		'numpy',
 	],
 	cmdclass={'bdist_wheel': bdist_wheel},
 )
