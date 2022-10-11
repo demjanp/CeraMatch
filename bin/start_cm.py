@@ -1,4 +1,4 @@
-from ceramatch.cm_main import CMMain
+from ceramatch import CMMain
 from os import system
 import sys
 
