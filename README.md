@@ -17,10 +17,10 @@ To install the latest version of Ceramatch from GitHub, use:
 pip install ceramatch
 ```
 
-To start the GUI use:
-```
-bin\start_cm.py
-```
+To start the GUI execute:
+
+[bin\start_cm.py](bin\start_cm.py)
+
 
 For a Windows installer see:
 
