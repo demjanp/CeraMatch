@@ -1,4 +1,4 @@
-# <img src="src/ceramatch/res/cm_icon.svg" width="32"> CeraMatch
+# <img src="cm_logo_small.svg" width="32"> CeraMatch
 Visual shape-matching and classification of ceramics
 
 Created on 18. 5. 2019
