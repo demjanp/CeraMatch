@@ -20,7 +20,7 @@ long_description = (here / "README.md").read_text(encoding="utf-8")
 
 setup(
 	name="ceramatch",
-	version="1.0.4",
+	version="1.0.41",
 	description="Visual shape-matching and classification of ceramics.",
 	long_description=long_description,
 	long_description_content_type="text/markdown",
@@ -48,7 +48,7 @@ setup(
 	]},
 	python_requires=">=3.10, <4",
 	install_requires=[
-		'lap_data>=4.0.0, <4.1',
+		'lap_data>=4.0.1, <4.1',
 		'scipy>=1.9.1, <2',
 		'scikit-image',
 		'scikit-learn>=1.1.1, <1.2',
