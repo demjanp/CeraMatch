@@ -8,9 +8,11 @@ Created on 18. 5. 2019
 
 1. [About CeraMatch](#about)
 2. [Installation](#installation)
-3. [Contact](#contact)
-4. [Acknowledgements](#acknowledgements)
-5. [License](#license)
+3. [Video Guide](#videoguide)
+4. [Sample Data](#sampledata)
+5. [Contact](#contact)
+6. [Acknowledgements](#acknowledgements)
+7. [License](#license)
 
 </details>
 
@@ -38,6 +40,12 @@ pip install ceramatch
 To start the GUI execute:
 
 [bin\start_cm.py](bin\start_cm.py)
+
+## Video Guide: <a name="videoguide"></a>
+[![Watch the video](https://img.youtube.com/vi/2TPSN40nX7k/default.jpg)](https://youtu.be/2TPSN40nX7k)
+
+## Sample Data: <a name="sampledata"></a>
+Demján, P., Pavúk, P., Kaner, T., Bobik, J., & Roosevelt, C. H. (2021, October 15). Sample Data - Middle- to Late Bronze Age pottery from Kaymakçı. https://doi.org/10.17605/OSF.IO/UX8VD 
 
 ## Contact: <a name="contact"></a>
 Peter Demján (peter.demjan@gmail.com)
