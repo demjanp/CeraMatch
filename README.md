@@ -10,9 +10,10 @@ Created on 18. 5. 2019
 2. [Installation](#installation)
 3. [Video Guide](#videoguide)
 4. [Sample Data](#sampledata)
-5. [Contact](#contact)
-6. [Acknowledgements](#acknowledgements)
-7. [License](#license)
+5. [Generating Datasets](#generating)
+6. [Contact](#contact)
+7. [Acknowledgements](#acknowledgements)
+8. [License](#license)
 
 </details>
 
@@ -46,6 +47,9 @@ To start the GUI execute:
 
 ## Sample Data: <a name="sampledata"></a>
 Demján, P., Pavúk, P., Kaner, T., Bobik, J., & Roosevelt, C. H. (2021, October 15). Sample Data - Middle- to Late Bronze Age pottery from Kaymakçı. https://doi.org/10.17605/OSF.IO/UX8VD 
+
+## Generating Datasets: <a name="generating"></a>
+You can create digital ceramics drawings usable in CeraMatch using the [Laser Aided Profiler Control Application](https://www.laseraidedprofiler.com/support/) by digitizing pottery fragments directly using the LAP device, or by digitizing drawings in PDF or raster image format (see this [video guide](https://youtu.be/OeevHiLsQTw)).
 
 ## Contact: <a name="contact"></a>
 Peter Demján (peter.demjan@gmail.com)
