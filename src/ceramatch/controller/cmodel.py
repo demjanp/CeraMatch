@@ -215,6 +215,9 @@ class CModel(LCModel):
 				obj.id, name_lookup, class_descriptors, 
 				primary_class, rel_primary, rel_chains,
 			)
+			if self.NAME_ID not in drawing_data[obj.id]:
+				del drawing_data[obj.id]
+				continue
 			pos = _get_position(obj, descr_pos)
 			if pos is not None:
 				drawing_data[obj.id]["position"] = pos
