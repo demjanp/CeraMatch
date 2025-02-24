@@ -7,7 +7,7 @@ from deposit import (DDateTime, DGeometry, DResource)
 from deposit.utils.fnc_files import (as_url)
 from deposit.query.parse import (remove_bracketed_all)
 
-from PySide2 import (QtCore)
+from PySide6 import (QtCore)
 from collections import defaultdict
 from itertools import combinations
 import datetime
@@ -108,24 +108,7 @@ class CModel(LCModel):
 				return []
 			return json.loads(data)
 		
-		lap_4_found = False
-		lap_3_found = False
-		try:
-			winreg.OpenKey(winreg.HKEY_CURRENT_USER, "SOFTWARE\LAP 4")
-			lap_4_found = True
-		except:
-			lap_4_found = False
-		if not lap_4_found:
-			try:
-				winreg.OpenKey(winreg.HKEY_CURRENT_USER, "SOFTWARE\Laser Aided Profiler")
-				lap_3_found = True
-			except:
-				lap_3_found = False
-		if lap_4_found or not lap_3_found:
-			lap_registry = DRegistry("LAP 4")
-		else:
-			lap_registry = DRegistry("Laser Aided Profiler")
-		
+		lap_registry = DRegistry("Laser Aided Profiler")
 		self.set_descriptors(_get_data(lap_registry, "descriptors"))
 		self.set_attributes(_get_data(lap_registry, "attributes"))
 		self.set_cm_classes(
@@ -175,12 +158,16 @@ class CModel(LCModel):
 				return (x, y)
 			return None
 		
-		name_lookup, class_descriptors, primary_class, rel_primary, rel_chains = \
-			self.get_load_lookups()
+		_, descriptors, _ = self.get_data_structure()
 		
-		for cls_del in ["Arc", "Photo", "Measure", "Annotation"]:
-			if cls_del in class_descriptors:
-				del class_descriptors[cls_del]
+		name_lookup = {}  # {(Class, Descriptor): name, ...}
+		primary_class = None # name of Sample class
+		for name, cls, descr in descriptors:
+			name_lookup[(cls, descr)] = name
+			if name == self.NAME_ID:
+				primary_class = cls
+		if primary_class is None:
+			raise Exception("Sample Class not found")	
 		
 		recons_descr = None
 		for cls, descr in name_lookup:
@@ -211,10 +198,7 @@ class CModel(LCModel):
 			if self._progress.cancel_pressed():
 				break
 			
-			drawing_data[obj.id] = self.load_object_data(
-				obj.id, name_lookup, class_descriptors, 
-				primary_class, rel_primary, rel_chains,
-			)
+			drawing_data[obj.id] = self.load_object_data(obj.id, name_lookup, primary_class)
 			if self.NAME_ID not in drawing_data[obj.id]:
 				del drawing_data[obj.id]
 				continue

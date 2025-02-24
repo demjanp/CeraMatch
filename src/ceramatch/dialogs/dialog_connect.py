@@ -3,7 +3,7 @@ from deposit_gui.dgui.dclickable_logo import DClickableLogo
 
 import ceramatch
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 import os
 
 class DialogConnect(DConnectFrame):

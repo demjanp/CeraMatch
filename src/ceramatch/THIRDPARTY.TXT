@@ -2779,10 +2779,10 @@ That's all there is to it!
 
 
 
-PySide2
+PySide6
 ============
 
-This software uses PySide2 under the GNU LGPL version 3.0.
+This software uses PySide6 under the GNU LGPL version 3.0.
 <https://www.gnu.org/licenses/gpl-3.0.html>
 <https://wiki.qt.io/Qt_for_Python>
 

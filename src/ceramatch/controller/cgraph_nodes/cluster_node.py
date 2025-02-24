@@ -1,6 +1,6 @@
 from ceramatch.controller.cgraph_nodes.node import Node
 
-from PySide2 import (QtWidgets, QtCore, QtGui, QtSvg)
+from PySide6 import (QtWidgets, QtCore, QtGui, QtSvg)
 
 class ClusterNode(Node):
 	

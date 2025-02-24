@@ -4,7 +4,7 @@
 from ceramatch import __version__, __date__
 import ceramatch
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 import os
 
 class DialogAbout(QtWidgets.QFrame):

@@ -2,7 +2,7 @@
 from ceramatch.view.vcontrols_groups.controls.button import (Button)
 from ceramatch.view.vcontrols_groups.controls.combo import (Combo)
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 
 class HeaderButton(QtWidgets.QToolButton):
 	

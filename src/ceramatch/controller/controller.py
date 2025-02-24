@@ -10,7 +10,7 @@ from ceramatch import __version__
 
 from deposit_gui.controller.controller import Controller as DepositController
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 import json
 import sys
 import os
@@ -80,6 +80,11 @@ class Controller(QtCore.QObject):
 				return False
 		
 		return True
+	
+	def clear_descriptors(self):
+		
+		self.cmodel.set_attributes()
+		self.ccontrols.update_attribute_data()
 	
 	def import_descriptors(self, path):
 		

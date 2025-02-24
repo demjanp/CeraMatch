@@ -2,7 +2,7 @@ from deposit_gui import (DView, DNotification)
 
 from ceramatch import __version__, __title__, res
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 import traceback
 import os
 

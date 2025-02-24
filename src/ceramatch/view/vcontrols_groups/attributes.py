@@ -1,6 +1,6 @@
 from ceramatch.view.vcontrols_groups.controls.button import (Button)
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 from deposit.utils.fnc_files import (as_url, url_to_path)
 
 class AttributeControl(object):

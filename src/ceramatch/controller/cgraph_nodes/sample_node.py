@@ -5,7 +5,7 @@ from ceramatch.utils.fnc_drawing import (render_drawing, get_profile_data)
 from deposit.utils.fnc_serialize import (try_numeric)
 from deposit import DGeometry
 
-from PySide2 import (QtWidgets, QtCore, QtGui, QtSvg)
+from PySide6 import (QtWidgets, QtCore, QtGui, QtSvg)
 import numbers
 
 class SampleNode(Node):

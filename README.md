@@ -77,7 +77,7 @@ This software uses the following open source packages:
 * [Psycopg](https://psycopg.org/)
 * [PyGraphviz](http://pygraphviz.github.io/)
 * [PyShp](https://github.com/GeospatialPython/pyshp)
-* [PySide2](https://www.pyside.org/)
+* [PySide6](https://www.pyside.org/)
 * [Qt](https://www.qt.io)
 * [scikit-image](https://scikit-image.org/)
 * [scikit-learn](http://scikit-learn.org/)

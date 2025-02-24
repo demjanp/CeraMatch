@@ -3,7 +3,7 @@ from deposit_gui.view.vquerytoolbar import VQueryToolbar
 
 from ceramatch.view.view import View
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 from pathlib import Path
 import json
 import os

@@ -4,16 +4,12 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 from itertools import combinations
-from natsort import natsorted
-from sklearn.decomposition import PCA
-from skimage.morphology import skeletonize, dilation, square
+from skimage.morphology import skeletonize, square
 from skimage import measure
-from scipy.spatial.distance import cdist, pdist, squareform
-from scipy.cluster.hierarchy import linkage
+from scipy.spatial.distance import cdist
 from scipy.interpolate import interp1d
 from scipy.signal import convolve2d
 import networkx as nx
-import time
 
 def get_rim(coords):
 	
@@ -171,7 +167,7 @@ def profile_axis(profile, rasterize_factor, min_length = 10):
 	d = np.abs(np.dstack((
 		rcs[:,0,None] - rcs[None,:,0], rcs[:,1,None] - rcs[None,:,1]
 	))).max(axis = 2)
-	G = nx.from_numpy_matrix(d == 1)
+	G = nx.from_numpy_array(d == 1)
 	paths = []
 	for i, j in combinations(idxs_nodes, 2):
 		path = nx.shortest_path(G, i, j)

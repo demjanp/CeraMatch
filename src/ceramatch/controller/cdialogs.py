@@ -8,7 +8,7 @@ from deposit.utils.fnc_files import (sanitize_filename)
 
 from deposit_gui import DCDialogs
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 import os
 
 class CDialogs(DCDialogs):

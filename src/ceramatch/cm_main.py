@@ -1,7 +1,7 @@
 from ceramatch.controller.controller import Controller
 from deposit.utils.fnc_files import (clear_temp_dir)
 
-from PySide2 import (QtWidgets)
+from PySide6 import (QtWidgets)
 import sys
 
 class CMMain(object):

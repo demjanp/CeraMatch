@@ -6,7 +6,7 @@ from ceramatch.view.vertical_scroll_area import VerticalScrollArea
 
 from deposit.utils.fnc_files import (as_url, url_to_path)
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 
 class VControls(QtWidgets.QFrame):
 	

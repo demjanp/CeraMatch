@@ -4,7 +4,7 @@ from ceramatch.view.vcontrols import VControls
 
 from ceramatch.utils.fnc_matching import (get_clusters, update_clusters)
 
-from PySide2 import (QtCore)
+from PySide6 import (QtCore)
 
 class CControls(AbstractSubcontroller):
 	

@@ -1,6 +1,6 @@
 from deposit_gui.dgui.dgraph_view import AbstractNode
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 
 class Node(AbstractNode):
 	

@@ -1,6 +1,6 @@
 from deposit.utils.fnc_serialize import (try_numeric)
 
-from PySide2 import (QtWidgets, QtCore, QtGui)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 from natsort import natsorted
 import numbers
 import os

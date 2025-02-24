@@ -54,6 +54,7 @@ class CActions(DCActions):
 				("Deposit", "Open Deposit"),
 				None,
 				("AutoBackup", "Backup database after every save"),
+				("ClearDescriptors", "Clear Descriptors"),
 				("ImportDescriptors", "Import Descriptors"),
 				None,
 				("ImportClustering", "Import Clustering"),
@@ -292,6 +293,19 @@ class CActions(DCActions):
 	def on_AutoBackup(self, state):
 		
 		self.cmain.cmodel.set_auto_backup(state)
+	
+	
+	def update_ClearDescriptors(self):
+		
+		return dict(
+			help = "Clear Descriptors",
+			checkable = False,
+			enabled = True,
+		)
+	
+	def on_ClearDescriptors(self, state):
+		
+		self.cmain.clear_descriptors()
 	
 	
 	def update_ImportDescriptors(self):

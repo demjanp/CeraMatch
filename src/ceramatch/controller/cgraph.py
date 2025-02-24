@@ -14,7 +14,7 @@ from ceramatch.utils.fnc_drawing import (save_catalog)
 
 from deposit.utils.fnc_files import (as_url)
 
-from PySide2 import (QtCore, QtGui, QtWidgets)
+from PySide6 import (QtCore, QtGui, QtWidgets)
 import networkx as nx
 import numpy as np
 import copy
