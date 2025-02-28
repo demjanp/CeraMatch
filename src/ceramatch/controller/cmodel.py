@@ -7,7 +7,7 @@ from deposit import (DDateTime, DGeometry, DResource)
 from deposit.utils.fnc_files import (as_url)
 from deposit.query.parse import (remove_bracketed_all)
 
-from PySide6 import (QtCore)
+from PySide6 import (QtWidgets, QtCore, QtGui)
 from collections import defaultdict
 from itertools import combinations
 import datetime
@@ -150,6 +150,21 @@ class CModel(LCModel):
 	
 	def load_drawings(self):
 		
+		def _get_structure():
+			
+			_, descriptors, _ = self.get_data_structure()
+			name_lookup = {}  # {(Class, Descriptor): name, ...}
+			primary_class = None # name of Sample class
+			for name, cls, descr in descriptors:
+				name_lookup[(cls, descr)] = name
+				if name == self.NAME_ID:
+					primary_class = cls
+			if primary_class is None:
+				raise Exception("Sample Class not found")
+			return name_lookup, primary_class
+			
+		
+		
 		def _get_position(obj, descr_pos):
 			
 			pos = obj.get_descriptor(descr_pos)
@@ -158,16 +173,24 @@ class CModel(LCModel):
 				return (x, y)
 			return None
 		
-		_, descriptors, _ = self.get_data_structure()
+		name_lookup, primary_class = _get_structure()
 		
-		name_lookup = {}  # {(Class, Descriptor): name, ...}
-		primary_class = None # name of Sample class
-		for name, cls, descr in descriptors:
-			name_lookup[(cls, descr)] = name
-			if name == self.NAME_ID:
-				primary_class = cls
-		if primary_class is None:
-			raise Exception("Sample Class not found")	
+		objects = self.get_drawing_objects()
+		if not objects:
+			return
+		for obj in objects:
+			data = self.load_object_data(obj.id, name_lookup, primary_class).get("Settings", None)
+			if isinstance(data, dict) and ('descriptors' in data):
+				settings = {"descriptors": [], "attributes": []}
+				if 'descriptors' in data['descriptors']:
+					settings['descriptors'] = data['descriptors']['descriptors']
+				if 'attributes' in data['descriptors']:
+					settings['attributes'] = data['descriptors']['attributes']
+				if settings['descriptors']:
+					self.from_settings_dict(settings)
+					break
+		
+		name_lookup, primary_class = _get_structure()
 		
 		recons_descr = None
 		for cls, descr in name_lookup:
@@ -185,18 +208,17 @@ class CModel(LCModel):
 		# [(source_id, target_id), ...]
 		
 		descr_pos = self._cm_classes["position"]
-		objects = self.get_drawing_objects()
-		if not objects:
-			return
 		
-		self._progress.show("Loading Drawings")
-		self._progress.update_state(value = 0, maximum = len(objects))
-		cnt = 1
+		QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
+		
+#		self._progress.show("Loading Drawings")
+#		self._progress.update_state(value = 0, maximum = len(objects))
+#		cnt = 1
 		for obj in objects:
-			self._progress.update_state(value = cnt)
-			cnt += 1
-			if self._progress.cancel_pressed():
-				break
+#			self._progress.update_state(value = cnt)
+#			cnt += 1
+#			if self._progress.cancel_pressed():
+#				break
 			
 			drawing_data[obj.id] = self.load_object_data(obj.id, name_lookup, primary_class)
 			if self.NAME_ID not in drawing_data[obj.id]:
@@ -207,15 +229,15 @@ class CModel(LCModel):
 				drawing_data[obj.id]["position"] = pos
 		
 		self._distance = {}
-		self._progress.show("Loading Distances")
-		self._progress.update_state(value = 0, maximum = len(objects))
-		cnt = 1
+#		self._progress.show("Loading Distances")
+#		self._progress.update_state(value = 0, maximum = len(objects))
+#		cnt = 1
 		done = set()
 		for obj in objects:
-			self._progress.update_state(value = cnt)
-			cnt += 1
-			if self._progress.cancel_pressed():
-				break
+#			self._progress.update_state(value = cnt)
+#			cnt += 1
+#			if self._progress.cancel_pressed():
+#				break
 			
 			for obj_tgt, label in obj.get_relations():
 				if label not in self._dist_rels:
@@ -287,7 +309,8 @@ class CModel(LCModel):
 					position = pos,
 				)
 		
-		self._progress.stop()
+#		self._progress.stop()
+		QtWidgets.QApplication.restoreOverrideCursor()
 		
 		self.cmain.cgraph.populate(drawing_data, cluster_data, node_data, edges)
 	

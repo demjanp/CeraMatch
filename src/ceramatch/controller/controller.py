@@ -81,24 +81,6 @@ class Controller(QtCore.QObject):
 		
 		return True
 	
-	def clear_descriptors(self):
-		
-		self.cmodel.set_attributes()
-		self.ccontrols.update_attribute_data()
-	
-	def import_descriptors(self, path):
-		
-		with open(path, "r") as f:
-			data = json.load(f)
-		if len(data) == 2:
-			attributes, descriptors = data
-			on_drawing = []
-		else:
-			attributes, descriptors, _ = data
-		self.cmodel.set_descriptors(descriptors)
-		self.cmodel.set_attributes(attributes)
-		self.ccontrols.update_attribute_data()
-	
 	def open_deposit(self, querystr = None):
 		
 		if self._deposit_controller is None:

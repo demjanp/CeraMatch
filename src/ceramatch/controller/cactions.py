@@ -54,8 +54,6 @@ class CActions(DCActions):
 				("Deposit", "Open Deposit"),
 				None,
 				("AutoBackup", "Backup database after every save"),
-				("ClearDescriptors", "Clear Descriptors"),
-				("ImportDescriptors", "Import Descriptors"),
 				None,
 				("ImportClustering", "Import Clustering"),
 				("ExportClustering", "Export Clustering"),
@@ -293,38 +291,6 @@ class CActions(DCActions):
 	def on_AutoBackup(self, state):
 		
 		self.cmain.cmodel.set_auto_backup(state)
-	
-	
-	def update_ClearDescriptors(self):
-		
-		return dict(
-			help = "Clear Descriptors",
-			checkable = False,
-			enabled = True,
-		)
-	
-	def on_ClearDescriptors(self, state):
-		
-		self.cmain.clear_descriptors()
-	
-	
-	def update_ImportDescriptors(self):
-		
-		return dict(
-			help = "Import Descriptors from LAP application",
-			checkable = False,
-			enabled = True,
-		)
-	
-	def on_ImportDescriptors(self, state):
-		
-		path, format = self.cmain.cview.get_load_path(
-			"Import Descriptors",
-			"Text file (*.txt)",
-		)
-		if not path:
-			return
-		self.cmain.import_descriptors(path)
 	
 	
 	def on_About(self, state):

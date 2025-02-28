@@ -24,8 +24,8 @@ class DialogExportDrawing(QtWidgets.QFrame):
 			self.folder = os.path.dirname(path)
 		
 		self.page_sizes = {}
-		for name in natsorted(QtGui.QPageSize.PageSizeId.values):
-			self.page_sizes[name] = QtGui.QPageSize.PageSizeId.__dict__[name]
+		for name in natsorted([item.name for item in QtGui.QPageSize.PageSizeId]):
+			self.page_sizes[name] = getattr(QtGui.QPageSize.PageSizeId, name)
 		
 		dialog.setModal(True)
 		dialog.set_button_box(True, True)

@@ -176,7 +176,7 @@ class CControls(AbstractSubcontroller):
 		
 		n_clusters, _ = self._view.clusters.get_limits()
 		n_max = self.cmain.cmodel.get_n_samples()
-		clustering_enabled = (n_max > 2)
+		clustering_enabled = (self.cmain.cmodel.has_distance() and (n_max > 2))
 		n_selected = len(self.cmain.cgraph.get_selected_samples())
 		
 		if clustering_enabled:
@@ -216,7 +216,19 @@ class CControls(AbstractSubcontroller):
 		# return data = {name: value, ...}
 		
 		# data = {name: (value, items), ...}; items = [value, ...]
+		
+		settings = {"descriptors": [], "attributes": []}
+		loaded_settings = data.get("Settings", None)
+		if isinstance(loaded_settings, dict) and ('descriptors' in loaded_settings):
+			if 'descriptors' in loaded_settings['descriptors']:
+				settings['descriptors'] = loaded_settings['descriptors']['descriptors']
+			if 'attributes' in loaded_settings['descriptors']:
+				settings['attributes'] = loaded_settings['descriptors']['attributes']
+		if settings['descriptors'] or settings['attributes']:
+			self.cmain.cmodel.from_settings_dict(settings)
+		
 		values = self.cmain.cmodel.get_descriptor_values()
+				
 		attr_data = {}
 		for name in data:
 			attr_data[name] = (data[name], [])

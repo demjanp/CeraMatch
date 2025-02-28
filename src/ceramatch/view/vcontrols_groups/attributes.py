@@ -98,13 +98,17 @@ class CheckBox(AttributeControl, QtWidgets.QCheckBox):
 	def set_value(self, value):
 		
 		value_ = False
+		was_enabled = self.isEnabled()
+		if isinstance(value, str):
+			value = value.strip()
+		if value in [None, '']:
+			value = False
 		try:
 			value_ = bool(int(value))
 		except:
-			raise Exception(
-				"Error: Could not convert attribute %s, value '%s' to bool" % (self.name, str(value))
-			)
+			self.setEnabled(False)
 		self.blockSignals(True)
+		self.setEnabled(was_enabled)
 		self.setChecked(value_)
 		self.blockSignals(False)
 	
