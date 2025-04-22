@@ -1,5 +1,12 @@
 # Change Log
 
+## 1.1.3 - 2025-04-22
+
+### Fixed
+
+- Disabled progress bars to prevent crashing on certain configurations
+
+
 ## 1.1.1 - 2025-02-28
 
 ### Added
