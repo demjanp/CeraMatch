@@ -1,6 +1,7 @@
 from deposit_gui import (DView, DNotification)
 
 from ceramatch import __version__, __title__, res
+from ceramatch.view.vprogress import VProgress
 
 from PySide6 import (QtWidgets, QtCore, QtGui)
 import traceback
@@ -14,6 +15,8 @@ class View(DView):
 	def __init__(self, vcontrols, vgraph) -> None:
 		
 		DView.__init__(self)
+		
+		self.progress = VProgress(self)
 		
 		self._close_callback = None
 		

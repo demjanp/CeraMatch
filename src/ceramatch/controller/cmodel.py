@@ -211,14 +211,14 @@ class CModel(LCModel):
 		
 		QtWidgets.QApplication.setOverrideCursor(QtGui.QCursor(QtCore.Qt.WaitCursor))
 		
-#		self._progress.show("Loading Drawings")
-#		self._progress.update_state(value = 0, maximum = len(objects))
-#		cnt = 1
+		self._progress.show("Loading Drawings")
+		self._progress.update_state(value = 0, maximum = len(objects))
+		cnt = 1
 		for obj in objects:
-#			self._progress.update_state(value = cnt)
-#			cnt += 1
-#			if self._progress.cancel_pressed():
-#				break
+			self._progress.update_state(value = cnt)
+			cnt += 1
+			if self._progress.cancel_pressed():
+				break
 			
 			drawing_data[obj.id] = self.load_object_data(obj.id, name_lookup, primary_class)
 			if self.NAME_ID not in drawing_data[obj.id]:
@@ -229,15 +229,15 @@ class CModel(LCModel):
 				drawing_data[obj.id]["position"] = pos
 		
 		self._distance = {}
-#		self._progress.show("Loading Distances")
-#		self._progress.update_state(value = 0, maximum = len(objects))
-#		cnt = 1
+		self._progress.show("Loading Distances")
+		self._progress.update_state(value = 0, maximum = len(objects))
+		cnt = 1
 		done = set()
 		for obj in objects:
-#			self._progress.update_state(value = cnt)
-#			cnt += 1
-#			if self._progress.cancel_pressed():
-#				break
+			self._progress.update_state(value = cnt)
+			cnt += 1
+			if self._progress.cancel_pressed():
+				break
 			
 			for obj_tgt, label in obj.get_relations():
 				if label not in self._dist_rels:
@@ -309,7 +309,7 @@ class CModel(LCModel):
 					position = pos,
 				)
 		
-#		self._progress.stop()
+		self._progress.stop()
 		QtWidgets.QApplication.restoreOverrideCursor()
 		
 		self.cmain.cgraph.populate(drawing_data, cluster_data, node_data, edges)
