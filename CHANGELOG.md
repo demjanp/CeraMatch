@@ -1,5 +1,12 @@
 # Change Log
 
+## 1.1.5 - 2026-04-07
+
+### Fixed
+- Optimized loading of drawings
+- Updated Windows installer creation workflow
+
+
 ## 1.1.3 - 2025-04-22
 
 ### Fixed
