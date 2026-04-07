@@ -34,6 +34,7 @@ class CModel(LCModel):
 		self._distance = {}
 		self._query = self.get_query("")
 		self._objects = None
+		self._load_object_data_specs_cache = None
 	
 	
 	# ---- Signal handling
@@ -93,6 +94,7 @@ class CModel(LCModel):
 		self._distance = {}
 		self._query = self.get_query("")
 		self._objects = None
+		self._load_object_data_specs_cache = None
 	
 	def set_cm_classes(self, data):
 		# data = {"cluster": name, "node": name, "position": name}
@@ -147,6 +149,127 @@ class CModel(LCModel):
 				if obj is not None:
 					self._objects.append(obj)
 		return self._objects
+
+	def _get_load_object_data_specs(self, primary_class):
+		
+		descriptor_rows = tuple(
+			(name, chain) for name, chain in self.get_descriptors()
+		)
+		_, _, relations = self.get_data_structure()
+		relation_rows = tuple(sorted(relations))
+		cache_key = (primary_class, descriptor_rows, relation_rows)
+		if (
+			(self._load_object_data_specs_cache is not None) and
+			(self._load_object_data_specs_cache[0] == cache_key)
+		):
+			return self._load_object_data_specs_cache[1]
+		
+		relation_lookup = defaultdict(set)
+		for cls1, rel, cls2 in relation_rows:
+			if cls1 == primary_class:
+				relation_lookup[cls2].add(rel)
+			elif cls2 == primary_class:
+				relation_lookup[cls1].add(self.reverse_relation(rel))
+		
+		direct_self = []
+		single_related = defaultdict(list)
+		multi_related = defaultdict(list)
+		empty_groups = set()
+		can_use_fast_path = True
+		
+		for name, chain in descriptor_rows:
+			parsed = self.parse_chain(chain)
+			if len(parsed) == 2:
+				cls, descr = parsed
+				if cls == primary_class:
+					direct_self.append((name, descr))
+				else:
+					rel_labels = relation_lookup.get(cls, set())
+					if not rel_labels:
+						can_use_fast_path = False
+						break
+					for rel in rel_labels:
+						single_related[(rel, cls)].append((name, descr))
+			
+			elif len(parsed) == 4:
+				cls1, rel, cls2, descr = parsed
+				if cls1 == primary_class:
+					rel_label, cls = rel, cls2
+				elif cls2 == primary_class:
+					rel_label, cls = self.reverse_relation(rel), cls1
+				else:
+					can_use_fast_path = False
+					break
+				
+				if name in self._multi_descriptors:
+					group = self._multi_descriptors[name]
+					empty_groups.add(group)
+					multi_related[(rel_label, cls)].append((group, name, descr))
+				else:
+					single_related[(rel_label, cls)].append((name, descr))
+			
+			else:
+				can_use_fast_path = False
+				break
+		
+		specs = None
+		if can_use_fast_path:
+			specs = dict(
+				direct_self = direct_self,
+				single_related = dict(single_related),
+				multi_related = dict(multi_related),
+				empty_groups = tuple(sorted(empty_groups)),
+				wanted_labels = set(
+					[label for label, _ in single_related] +
+					[label for label, _ in multi_related]
+				),
+			)
+		
+		self._load_object_data_specs_cache = (cache_key, specs)
+		
+		return specs
+
+	def load_object_data(self, obj_id, name_lookup, primary_class):
+		
+		specs = self._get_load_object_data_specs(primary_class)
+		if specs is None:
+			return LCModel.load_object_data(self, obj_id, name_lookup, primary_class)
+		
+		obj = self.get_object(obj_id)
+		if obj is None:
+			return {}
+		
+		data = {}
+		grouped = defaultdict(dict)
+		
+		for name, descr in specs["direct_self"]:
+			value = obj.get_descriptor(descr)
+			if value is not None:
+				data[name] = value
+		
+		for obj_tgt, label in obj.get_relations():
+			if label not in specs["wanted_labels"]:
+				continue
+			for cls in obj_tgt.get_class_names():
+				key = (label, cls)
+				for name, descr in specs["single_related"].get(key, []):
+					if name in data:
+						continue
+					value = obj_tgt.get_descriptor(descr)
+					if value is not None:
+						data[name] = value
+				for group, name, descr in specs["multi_related"].get(key, []):
+					value = obj_tgt.get_descriptor(descr)
+					if value is None:
+						continue
+					if obj_tgt.id not in grouped[group]:
+						grouped[group][obj_tgt.id] = {}
+					grouped[group][obj_tgt.id][name] = value
+		
+		for group in specs["empty_groups"]:
+			data[group] = list(grouped[group].values())
+		
+		return data
 	
 	def load_drawings(self):
 		

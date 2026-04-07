@@ -1,3 +1,50 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=66.1.0", "wheel", "setuptools_scm[toml]>=6.0"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "ceramatch"
+description = "Visual shape-matching and classification of ceramics."
+readme = "README.md"
+requires-python = ">=3.10, <4"
+license = {text = "GNU General Public License v3 (GPLv3)"}
+authors = [
+    {name = "Peter Demjan", email = "peter.demjan@gmail.com"}
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3.10",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+]
+keywords = [
+    "ceramics",
+    "classification",
+    "cluster analysis",
+    "morphometrics",
+]
+dynamic = ["version"]
+dependencies = [
+    "lap_data",
+    "numpy",
+    "opencv-python",
+    "scikit-image",
+    "scikit-learn",
+    "scipy",
+]
+
+[project.urls]
+homepage = "https://github.com/demjanp/CeraMatch"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+ceramatch = ["*.TXT"]
+"ceramatch.res" = ["*.png", "*.svg"]
+"ceramatch.utils" = ["*.pyd"]
+
+[tool.setuptools_scm]
+write_to = "src/ceramatch/_version.py"
