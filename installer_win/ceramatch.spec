@@ -2,6 +2,7 @@
 
 import os
 import sys
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 
 args = sys.argv[2:]
@@ -16,6 +17,8 @@ if os.path.split(deposit_path)[-1] != "deposit_gui":
     raise Exception("Invalid deposit dir: path must end with deposit_gui")
 
 block_cipher = None
+lap_data_hiddenimports = collect_submodules("lap_data")
+lap_data_metadata = copy_metadata("lap_data")
 
 path = "installer_win\\hiddenimports.py"
 with open(path, "r", encoding="utf-8") as file:
@@ -33,10 +36,11 @@ a = Analysis(
         ("..\\cm_icon.ico", "."),
         (os.path.join(deposit_path, "dist", "deposit_gui"), "deposit_gui"),
         (os.path.join(deposit_path, "dist", "deposit_gui", "deposit_gui"), "deposit_gui"),
-    ],
+    ] + lap_data_metadata,
     hiddenimports=[
         "ceramatch",
         "deposit_gui",
+        "lap_data",
         "networkit.base",
         "networkit.helpers",
         "networkit.traversal",
@@ -48,7 +52,7 @@ a = Analysis(
         "sklearn.tree._utils",
         "sklearn.utils._cython_blas",
         "sklearn.utils._weight_vector",
-    ] + imports,
+    ] + lap_data_hiddenimports + imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

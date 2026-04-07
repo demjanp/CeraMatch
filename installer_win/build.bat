@@ -14,21 +14,30 @@ set "deposit_dir=%CD%"
 popd
 
 cd ..
+set "venv_python=%CD%\.venv\Scripts\python.exe"
+if not exist "%venv_python%" goto error_venv
+
+git config --global --get-all safe.directory | findstr /I /X /C:"%CD%" >nul
+if errorlevel 1 git config --global --add safe.directory "%CD%"
+
 if exist build\ceramatch rmdir build\ceramatch /S /Q
 if exist dist\ceramatch rmdir dist\ceramatch /S /Q
 
-call .venv\Scripts\activate.bat
-python -m pip install -e . --no-deps
+"%venv_python%" -m pip show PyInstaller >nul 2>&1
+if errorlevel 1 "%venv_python%" -m pip install "PyInstaller==5.6.2"
 
-python bin\update_imports.py installer_win
+"%venv_python%" -m pip install -e . --no-deps
+if errorlevel 1 goto error_build
+
+"%venv_python%" bin\update_imports.py installer_win
 if errorlevel 1 (
     echo Warning: bin\update_imports.py failed; using existing installer_win\hiddenimports.py
 )
 
-call pyinstaller installer_win\ceramatch.spec ""%deposit_dir%""
+"%venv_python%" -m PyInstaller installer_win\ceramatch.spec ""%deposit_dir%""
 if errorlevel 1 goto error_build
 
-python installer_win\make_nsi.py %cd%
+"%venv_python%" installer_win\make_nsi.py %cd%
 if errorlevel 1 goto error_build
 
 goto end
@@ -47,6 +56,11 @@ exit /b 1
 :error_deposit_dist
 echo Error: The directory %deposit_dir%\dist\deposit_gui does not exist.
 echo Build Deposit GUI first, then rerun this script.
+popd
+exit /b 1
+
+:error_venv
+echo Error: The virtual environment Python was not found at %venv_python%.
 popd
 exit /b 1
 
